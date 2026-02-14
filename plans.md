@@ -121,16 +121,11 @@
 ## Final Verification Notes
 - Date: 2026-02-14
 - Commands run:
-  - 
-ode --check src/main.js and syntax checks for all source modules.
-  - 
-ode tests/physics-smoke.mjs`r
-  - 
-ode tests/ui-layout-smoke.mjs`r
-  - 
-ode tests/overlay-mode-smoke.mjs`r
-  - 
-ode tests/tool-mechanics-smoke.mjs`r
+  - `node --check` on all source modules.
+  - `node tests/physics-smoke.mjs`
+  - `node tests/ui-layout-smoke.mjs`
+  - `node tests/overlay-mode-smoke.mjs`
+  - `node tests/tool-mechanics-smoke.mjs`
   - Local static server smoke test via python -m http.server + Invoke-WebRequest.
 - Result: all gates passed and all milestones committed.
 
@@ -147,11 +142,11 @@ ode tests/tool-mechanics-smoke.mjs`r
 - `docs: extend plan for thermodynamic entropy recode`
 
 ### Milestone 9 - Cellular Automata Thermo Field
-- [ ] Add a cellular-automata thermo grid over the board.
-- [ ] Track per-cell temperature, pressure, and entropy proxies.
-- [ ] Implement diffusion, relaxation, and local forcing from tools.
-- [ ] Sample field at balloon position and drive balloon thermo state from field.
-- [ ] Recode entropy tool to use pressure/temperature disorder instead of pure velocity noise.
+- [x] Add a cellular-automata thermo grid over the board.
+- [x] Track per-cell temperature, pressure, and entropy proxies.
+- [x] Implement diffusion, relaxation, and local forcing from tools.
+- [x] Sample field at balloon position and drive balloon thermo state from field.
+- [x] Recode entropy tool to use pressure/temperature disorder instead of pure velocity noise.
 
 #### Test Gate
 - Add/extend tests to verify CA updates and entropy behavior are stable and meaningful.
@@ -161,9 +156,9 @@ ode tests/tool-mechanics-smoke.mjs`r
 - `feat: recode entropy and thermo behavior using cellular automata field`
 
 ### Milestone 10 - Temperature Heatmap Hover Visuals
-- [ ] Render temperature heatmap overlay inside lens when hovering/applying heat-related commands.
-- [ ] Make heat/cold/vacuum/highPressure/entropy visuals draw from CA field data.
-- [ ] Keep gravity-only grid rule intact for Mass/Dark Energy modes.
+- [x] Render temperature heatmap overlay inside lens when hovering/applying heat-related commands.
+- [x] Make heat/cold/vacuum/highPressure/entropy visuals draw from CA field data.
+- [x] Keep gravity-only grid rule intact for Mass/Dark Energy modes.
 
 #### Test Gate
 - Overlay mode tests pass.
@@ -173,9 +168,9 @@ ode tests/tool-mechanics-smoke.mjs`r
 - `feat: add thermo heatmap hover overlays driven by CA field`
 
 ### Milestone 11 - Live Equation HUD For All 10 Commandments
-- [ ] Add a per-commandment live equation string in 3Blue1Brown style.
-- [ ] Update equations every frame with live values (cursor/balloon/field terms).
-- [ ] Keep equations decoupled from true simulation fidelity (display layer only).
+- [x] Add a per-commandment live equation string in 3Blue1Brown style.
+- [x] Update equations every frame with live values (cursor/balloon/field terms).
+- [x] Keep equations decoupled from true simulation fidelity (display layer only).
 
 #### Test Gate
 - Add tests to ensure each commandment has a live equation and updates safely.
@@ -185,10 +180,10 @@ ode tests/tool-mechanics-smoke.mjs`r
 - `feat: add live equation HUD for all commandments`
 
 ### Milestone 12 - Final Phase 2 Closeout
-- [ ] Run full syntax checks.
-- [ ] Run full smoke test suite.
-- [ ] Run local server smoke check.
-- [ ] Mark all Phase 2 checkboxes complete with verification notes.
+- [x] Run full syntax checks.
+- [x] Run full smoke test suite.
+- [x] Run local server smoke check.
+- [x] Mark all Phase 2 checkboxes complete with verification notes.
 
 #### Test Gate
 - Clean run with no errors.
@@ -196,4 +191,25 @@ ode tests/tool-mechanics-smoke.mjs`r
 
 #### Commit
 - `docs: finalize thermodynamic phase and verification notes`
+
+## Phase 2 Verification Notes
+- Date: 2026-02-14
+- Commands run:
+  - `node --check src/main.js`
+  - `node --check src/physicsEngine.js`
+  - `node --check src/renderer.js`
+  - `node --check src/thermoAutomata.js`
+  - `node --check src/equationHud.js`
+  - `node --check tests/thermo-ca-smoke.mjs`
+  - `node --check tests/equation-hud-smoke.mjs`
+  - `node --check tests/thermo-heatmap-hover-smoke.mjs`
+  - `node tests/physics-smoke.mjs`
+  - `node tests/ui-layout-smoke.mjs`
+  - `node tests/overlay-mode-smoke.mjs`
+  - `node tests/tool-mechanics-smoke.mjs`
+  - `node tests/thermo-ca-smoke.mjs`
+  - `node tests/equation-hud-smoke.mjs`
+  - `node tests/thermo-heatmap-hover-smoke.mjs`
+  - Python inline `ThreadingHTTPServer` + `urllib.request.urlopen` (`http-status: 200`)
+- Result: all Phase 2 gates passed.
 
