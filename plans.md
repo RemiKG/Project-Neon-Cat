@@ -134,3 +134,66 @@ ode tests/tool-mechanics-smoke.mjs`r
   - Local static server smoke test via python -m http.server + Invoke-WebRequest.
 - Result: all gates passed and all milestones committed.
 
+## Phase 2 - Thermodynamic Entropy Recode
+
+### Milestone 8 - Plan Extension And Baseline Snapshot
+- [x] Add a second-phase plan for thermodynamic entropy + equation HUD.
+- [x] Capture current baseline with a full test pass before recode.
+
+#### Test Gate
+- Run current smoke tests and ensure green baseline.
+
+#### Commit
+- `docs: extend plan for thermodynamic entropy recode`
+
+### Milestone 9 - Cellular Automata Thermo Field
+- [ ] Add a cellular-automata thermo grid over the board.
+- [ ] Track per-cell temperature, pressure, and entropy proxies.
+- [ ] Implement diffusion, relaxation, and local forcing from tools.
+- [ ] Sample field at balloon position and drive balloon thermo state from field.
+- [ ] Recode entropy tool to use pressure/temperature disorder instead of pure velocity noise.
+
+#### Test Gate
+- Add/extend tests to verify CA updates and entropy behavior are stable and meaningful.
+- Keep physics and mechanic smoke tests passing.
+
+#### Commit
+- `feat: recode entropy and thermo behavior using cellular automata field`
+
+### Milestone 10 - Temperature Heatmap Hover Visuals
+- [ ] Render temperature heatmap overlay inside lens when hovering/applying heat-related commands.
+- [ ] Make heat/cold/vacuum/highPressure/entropy visuals draw from CA field data.
+- [ ] Keep gravity-only grid rule intact for Mass/Dark Energy modes.
+
+#### Test Gate
+- Overlay mode tests pass.
+- Manual hover check confirms visible heatmap color response.
+
+#### Commit
+- `feat: add thermo heatmap hover overlays driven by CA field`
+
+### Milestone 11 - Live Equation HUD For All 10 Commandments
+- [ ] Add a per-commandment live equation string in 3Blue1Brown style.
+- [ ] Update equations every frame with live values (cursor/balloon/field terms).
+- [ ] Keep equations decoupled from true simulation fidelity (display layer only).
+
+#### Test Gate
+- Add tests to ensure each commandment has a live equation and updates safely.
+- Full smoke suite remains green.
+
+#### Commit
+- `feat: add live equation HUD for all commandments`
+
+### Milestone 12 - Final Phase 2 Closeout
+- [ ] Run full syntax checks.
+- [ ] Run full smoke test suite.
+- [ ] Run local server smoke check.
+- [ ] Mark all Phase 2 checkboxes complete with verification notes.
+
+#### Test Gate
+- Clean run with no errors.
+- All Phase 2 tasks checked.
+
+#### Commit
+- `docs: finalize thermodynamic phase and verification notes`
+
