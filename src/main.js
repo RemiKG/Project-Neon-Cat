@@ -5,6 +5,7 @@ import { ParticleSystem } from "./particles.js";
 import { PhysicsEngine } from "./physicsEngine.js";
 import { Renderer } from "./renderer.js";
 import { getToolIdAtPoint, pointInBoard } from "./uiLayout.js";
+import { getLiveEquation } from "./equationHud.js";
 
 const canvas = document.getElementById("gameCanvas");
 canvas.width = WORLD_WIDTH;
@@ -27,6 +28,7 @@ const gameState = {
   constantsRemaining: 10,
   titleText: TOOL_BY_ID.heat.title,
   applyingTool: false,
+  liveEquation: "",
 };
 
 const loop = new GameLoop({
@@ -34,6 +36,7 @@ const loop = new GameLoop({
     const control = handleInput();
     physics.update(dt, control, particles);
     particles.update(dt);
+    gameState.liveEquation = getLiveEquation(gameState.activeTool, physics, input);
     input.endFrame();
   },
   render: () => {
@@ -46,6 +49,7 @@ loop.start();
 function handleInput() {
   const { pointerX, pointerY } = input;
   let pointerPressedForTool = input.wasPressed;
+  const pointerInBoard = pointInBoard(pointerX, pointerY);
 
   if (input.wasPressed) {
     const sidebarTool = getToolIdAtPoint(pointerX, pointerY);
@@ -57,7 +61,7 @@ function handleInput() {
     }
   }
 
-  const applying = input.isDown && pointInBoard(pointerX, pointerY);
+  const applying = input.isDown && pointerInBoard;
   gameState.applyingTool = applying;
 
   if (applying && !gameState.usedTools.has(gameState.activeTool)) {
@@ -70,6 +74,7 @@ function handleInput() {
     applying,
     pointerX,
     pointerY,
+    pointerInBoard,
     pointerPressed: pointerPressedForTool,
     pointerReleased: input.wasReleased,
   };

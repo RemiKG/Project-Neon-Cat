@@ -32,6 +32,7 @@ export class Renderer {
       input.pointerX,
       input.pointerY,
       gameState.applyingTool || pointInBoard(input.pointerX, input.pointerY),
+      physics,
     );
 
     this._drawBoardFrame();
@@ -113,7 +114,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawFieldLens(activeTool, cx, cy, visible) {
+  _drawFieldLens(activeTool, cx, cy, visible, physics) {
     if (!visible || !pointInBoard(cx, cy)) {
       return;
     }
@@ -128,6 +129,10 @@ export class Renderer {
       this._clipLens(cx, cy, lensRadius);
     } else {
       this._clipBoardLens(cx, cy, lensRadius);
+    }
+
+    if (activeTool === "heat" || activeTool === "cold" || activeTool === "highPressure" || activeTool === "vacuum" || activeTool === "entropy") {
+      this._drawThermoHeatmap(physics?.thermo, cx, cy, activeTool);
     }
 
     switch (overlayKind) {
@@ -159,7 +164,7 @@ export class Renderer {
         this._drawRingField(cx, cy, "rgba(255,255,255,0.5)");
         break;
       case "entropy":
-        this._drawEntropyField(cx, cy);
+        this._drawEntropyField(cx, cy, physics?.thermo);
         break;
       default:
         break;
@@ -249,10 +254,83 @@ export class Renderer {
     });
   }
 
-  _drawEntropyField(cx, cy) {
+  _drawThermoHeatmap(thermo, cx, cy, mode) {
+    if (!thermo) {
+      return;
+    }
+
+    const ctx = this.ctx;
+    const radius = LAYOUT.lensRadius;
+
+    ctx.save();
+    thermo.forEachCellInRadius(cx, cy, radius, (cellX, cellY, index, influence) => {
+      const world = thermo.cellToWorld(cellX, cellY);
+      const temp = thermo.temp[index];
+      const pressure = thermo.pressure[index];
+      const entropy = thermo.entropy[index];
+
+      let r = 255;
+      let g = 255;
+      let b = 255;
+      let a = 0.08 * influence;
+
+      switch (mode) {
+        case "heat": {
+          const t = clamp((temp - 1) / 0.95, 0, 1);
+          r = 255;
+          g = Math.round(130 + 100 * t);
+          b = Math.round(60 + 25 * t);
+          a = (0.16 + 0.32 * t) * influence;
+          break;
+        }
+        case "cold": {
+          const c = clamp((1 - temp) / 0.9, 0, 1);
+          r = Math.round(150 - 55 * c);
+          g = Math.round(205 + 28 * c);
+          b = 255;
+          a = (0.15 + 0.34 * c) * influence;
+          break;
+        }
+        case "highPressure": {
+          const p = clamp((pressure - 1) / 1.4, 0, 1);
+          r = 255;
+          g = 255;
+          b = 255;
+          a = (0.06 + 0.24 * p) * influence;
+          break;
+        }
+        case "vacuum": {
+          const v = clamp((1 - pressure) / 0.85, 0, 1);
+          r = 210;
+          g = Math.round(220 + 20 * v);
+          b = 255;
+          a = (0.07 + 0.26 * v) * influence;
+          break;
+        }
+        case "entropy": {
+          const e = clamp(entropy / 2.2, 0, 1);
+          const mixed = clamp((temp - pressure + 1) * 0.5, 0, 1);
+          r = Math.round(165 + 75 * mixed);
+          g = Math.round(120 + 80 * (1 - Math.abs(mixed - 0.5) * 2));
+          b = Math.round(200 + 42 * (1 - mixed));
+          a = (0.09 + 0.28 * e) * influence;
+          break;
+        }
+        default:
+          break;
+      }
+
+      const half = thermo.cellSize * 0.5;
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.fillRect(world.x - half, world.y - half, thermo.cellSize + 0.6, thermo.cellSize + 0.6);
+    });
+    ctx.restore();
+  }
+
+  _drawEntropyField(cx, cy, thermo = null) {
     const ctx = this.ctx;
     const board = LAYOUT.board;
-    const spacing = 36;
+    const spacing = thermo ? thermo.cellSize : 36;
     const radius = LAYOUT.lensRadius;
 
     ctx.save();
@@ -266,11 +344,27 @@ export class Renderer {
         }
 
         const influence = clamp(1 - dist / radius, 0, 1);
-        const noise = valueNoise2D(x * 0.04, y * 0.04);
-        const angle = noise * Math.PI * 2;
-        const len = lerp(4, 16, influence);
-        const ex = x + Math.cos(angle) * len;
-        const ey = y + Math.sin(angle) * len;
+
+        let vx;
+        let vy;
+        let len;
+
+        if (thermo) {
+          const sample = thermo.sample(x, y);
+          vx = sample.gradTempX - sample.gradPressureX - sample.gradPressureY * 0.7;
+          vy = sample.gradTempY - sample.gradPressureY + sample.gradPressureX * 0.7;
+          len = lerp(5, 19, influence) * (0.5 + sample.entropy * 0.45);
+        } else {
+          const noise = valueNoise2D(x * 0.04, y * 0.04);
+          const angle = noise * Math.PI * 2;
+          vx = Math.cos(angle);
+          vy = Math.sin(angle);
+          len = lerp(4, 16, influence);
+        }
+
+        const norm = Math.hypot(vx, vy) || 1;
+        const ex = x + (vx / norm) * len;
+        const ey = y + (vy / norm) * len;
 
         ctx.strokeStyle = `rgba(255,255,255,${0.18 + influence * 0.72})`;
         ctx.lineWidth = 1.2;
@@ -1000,6 +1094,12 @@ export class Renderer {
     ctx.font = "26px Times New Roman";
     ctx.fillStyle = "rgba(255,255,255,0.78)";
     ctx.fillText(`Constants Remaining: ${gameState.constantsRemaining}/10`, LAYOUT.title.x, LAYOUT.title.y + 38);
+
+    if (gameState.liveEquation) {
+      ctx.font = "19px Cambria Math, Times New Roman, serif";
+      ctx.fillStyle = "rgba(190,240,255,0.9)";
+      ctx.fillText(gameState.liveEquation, LAYOUT.title.x, LAYOUT.title.y + 66);
+    }
     ctx.restore();
   }
 
