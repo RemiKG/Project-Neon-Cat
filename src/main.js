@@ -1,8 +1,9 @@
-﻿import { WORLD_WIDTH, WORLD_HEIGHT } from "./config.js";
+﻿import { TOOL_BY_ID, WORLD_WIDTH, WORLD_HEIGHT } from "./config.js";
 import { GameLoop } from "./gameLoop.js";
 import { InputHandler } from "./inputHandler.js";
 import { PhysicsEngine } from "./physicsEngine.js";
 import { Renderer } from "./renderer.js";
+import { getToolIdAtPoint, pointInBoard } from "./uiLayout.js";
 
 const canvas = document.getElementById("gameCanvas");
 canvas.width = WORLD_WIDTH;
@@ -22,11 +23,13 @@ const gameState = {
   activeTool: "heat",
   usedTools: new Set(),
   constantsRemaining: 10,
-  titleText: "Fundamental Constant: Thermal Expansion",
+  titleText: TOOL_BY_ID.heat.title,
+  applyingTool: false,
 };
 
 const loop = new GameLoop({
   update: (dt) => {
+    handleInput();
     physics.update(dt);
     input.endFrame();
   },
@@ -36,6 +39,28 @@ const loop = new GameLoop({
 });
 
 loop.start();
+
+function handleInput() {
+  const { pointerX, pointerY } = input;
+
+  if (input.wasPressed) {
+    const sidebarTool = getToolIdAtPoint(pointerX, pointerY);
+    if (sidebarTool) {
+      gameState.activeTool = sidebarTool;
+      gameState.titleText = TOOL_BY_ID[sidebarTool].title;
+      gameState.applyingTool = false;
+      return;
+    }
+  }
+
+  const applying = input.isDown && pointInBoard(pointerX, pointerY);
+  gameState.applyingTool = applying;
+
+  if (applying && !gameState.usedTools.has(gameState.activeTool)) {
+    gameState.usedTools.add(gameState.activeTool);
+    gameState.constantsRemaining = Math.max(0, 10 - gameState.usedTools.size);
+  }
+}
 
 function fitCanvas(target) {
   const pad = 10;
