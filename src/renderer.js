@@ -1,6 +1,6 @@
 ﻿import { COLORS, LAYOUT, TOOL_BY_ID, TOOLS, WORLD_HEIGHT, WORLD_WIDTH } from "./config.js";
 import { clamp, length, lerp, valueNoise2D } from "./math.js";
-import { TOOL_OVERLAY_KIND } from "./fieldModes.js";
+import { TOOL_OVERLAY_KIND, sampleVectorFieldArrow, warpGridPoint } from "./fieldModes.js";
 import { getSidebarItemRect, pointInBoard } from "./uiLayout.js";
 
 export class Renderer {
@@ -321,23 +321,14 @@ export class Renderer {
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.6;
 
-    const warp = (x, y) => {
-      const dx = x - cx;
-      const dy = y - cy;
-      const dist = Math.hypot(dx, dy) || 1;
-      const influence = clamp(1 - dist / warpRadius, 0, 1);
-      const direction = inward ? -1 : 1;
-      const offset = direction * influence * influence * 52;
-      return {
-        x: x + (dx / dist) * offset,
-        y: y + (dy / dist) * offset,
-      };
-    };
-
     for (let x = area.x; x <= area.x + area.width; x += spacing) {
       ctx.beginPath();
       for (let y = area.y; y <= area.y + area.height; y += 12) {
-        const p = warp(x, y);
+        const p = warpGridPoint(x, y, cx, cy, {
+          lensRadius: warpRadius,
+          inward,
+          warpStrength: 52,
+        });
         if (y === area.y) {
           ctx.moveTo(p.x, p.y);
         } else {
@@ -350,7 +341,11 @@ export class Renderer {
     for (let y = area.y; y <= area.y + area.height; y += spacing) {
       ctx.beginPath();
       for (let x = area.x; x <= area.x + area.width; x += 12) {
-        const p = warp(x, y);
+        const p = warpGridPoint(x, y, cx, cy, {
+          lensRadius: warpRadius,
+          inward,
+          warpStrength: 52,
+        });
         if (x === area.x) {
           ctx.moveTo(p.x, p.y);
         } else {
@@ -376,46 +371,42 @@ export class Renderer {
     ctx.save();
     for (let y = area.y + spacing * 0.5; y < area.y + area.height; y += spacing) {
       for (let x = area.x + spacing * 0.5; x < area.x + area.width; x += spacing) {
-        const dx = x - cx;
-        const dy = y - cy;
-        const dist = Math.hypot(dx, dy);
-
-        if (dist > radius * 1.08 || dist < 1.5) {
+        const arrow = sampleVectorFieldArrow({
+          x,
+          y,
+          cx,
+          cy,
+          lensRadius: radius,
+          inward,
+          spacing,
+          baseLength,
+          alphaMultiplier: options.alphaMultiplier ?? 1,
+          streakMode,
+        });
+        if (!arrow) {
           continue;
         }
 
-        const influence = clamp(1 - dist / radius, 0, 1);
-        const alpha = clamp(influence * (options.alphaMultiplier ?? 1), 0, 1);
-
-        if (alpha <= 0.03) {
-          continue;
-        }
-
-        const invDist = 1 / dist;
-        const dir = inward ? -1 : 1;
-        const nx = dx * invDist * dir;
-        const ny = dy * invDist * dir;
-
-        const len = baseLength * (0.38 + influence * (streakMode ? 2.2 : 1.4));
-        const startX = streakMode ? x - nx * len * 0.15 : x;
-        const startY = streakMode ? y - ny * len * 0.15 : y;
-        const endX = x + nx * len;
-        const endY = y + ny * len;
-
-        ctx.strokeStyle = withAlpha(options.color, clamp(alpha, 0.04, 0.98));
+        ctx.strokeStyle = withAlpha(options.color, clamp(arrow.alpha, 0.04, 0.98));
         ctx.lineWidth = streakMode ? 1.4 : 1.7;
         ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
+        ctx.moveTo(arrow.startX, arrow.startY);
+        ctx.lineTo(arrow.endX, arrow.endY);
         ctx.stroke();
 
         if (!streakMode) {
           const head = 3.2;
           ctx.beginPath();
-          ctx.moveTo(endX, endY);
-          ctx.lineTo(endX - nx * head + ny * head * 0.8, endY - ny * head - nx * head * 0.8);
-          ctx.moveTo(endX, endY);
-          ctx.lineTo(endX - nx * head - ny * head * 0.8, endY - ny * head + nx * head * 0.8);
+          ctx.moveTo(arrow.endX, arrow.endY);
+          ctx.lineTo(
+            arrow.endX - arrow.nx * head + arrow.ny * head * 0.8,
+            arrow.endY - arrow.ny * head - arrow.nx * head * 0.8,
+          );
+          ctx.moveTo(arrow.endX, arrow.endY);
+          ctx.lineTo(
+            arrow.endX - arrow.nx * head - arrow.ny * head * 0.8,
+            arrow.endY - arrow.ny * head + arrow.nx * head * 0.8,
+          );
           ctx.stroke();
         }
       }
@@ -1035,4 +1026,5 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.arcTo(x, y, x + width, y, r);
   ctx.closePath();
 }
+
 

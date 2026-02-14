@@ -1,5 +1,11 @@
 ﻿import { BALLOON_CONFIG, BASE_PHYSICS, createMazeSegments, LAYOUT } from "./config.js";
-import { clamp, closestPointOnSegment, dot, length, normalize, valueNoise2D } from "./math.js";
+import { clamp, closestPointOnSegment, dot, length, normalize } from "./math.js";
+import {
+  computeEntropyDelta,
+  computeMassFieldDelta,
+  computeRadialForceDelta,
+  computeRadialImpulseDelta,
+} from "./fieldModes.js";
 
 const TOOL_RADIUS = LAYOUT.lensRadius * 1.45;
 
@@ -153,11 +159,15 @@ export class PhysicsEngine {
         break;
       }
       case "entropy": {
-        const response = 1 / Math.max(0.25, b.massFactor);
-        const n1 = valueNoise2D(this.time * 3.8, b.x * 0.012) - 0.5;
-        const n2 = valueNoise2D(b.y * 0.011, this.time * 3.4) - 0.5;
-        b.vx += n1 * 430 * dt * response;
-        b.vy += n2 * 430 * dt * response;
+        const delta = computeEntropyDelta({
+          time: this.time,
+          x: b.x,
+          y: b.y,
+          dt,
+          massFactor: b.massFactor,
+        });
+        b.vx += delta.dvx;
+        b.vy += delta.dvy;
         break;
       }
       default:
@@ -167,60 +177,51 @@ export class PhysicsEngine {
 
   _applyMassField(px, py, dt, attract) {
     const b = this.balloon;
-    const dx = px - b.x;
-    const dy = py - b.y;
-    const dist = Math.hypot(dx, dy) || 1;
-    const distSq = dist * dist;
-
-    const direction = attract ? 1 : -1;
-    const rawStrength = (28000000 / (distSq + 16000)) * direction;
-    const strength = clamp(rawStrength, -1250, 1250);
-    const response = 1 / Math.max(0.25, b.massFactor);
-
-    b.vx += (dx / dist) * strength * dt * response;
-    b.vy += (dy / dist) * strength * dt * response;
+    const delta = computeMassFieldDelta({
+      balloonX: b.x,
+      balloonY: b.y,
+      pointerX: px,
+      pointerY: py,
+      dt,
+      attract,
+      massFactor: b.massFactor,
+    });
+    b.vx += delta.dvx;
+    b.vy += delta.dvy;
   }
 
   _applyCursorRadialForce(px, py, dt, options) {
     const b = this.balloon;
-    const dx = b.x - px;
-    const dy = b.y - py;
-    const dist = Math.hypot(dx, dy) || 1;
-
-    const influence = clamp(1 - dist / TOOL_RADIUS, 0, 1);
-    if (influence <= 0) {
-      return;
-    }
-
-    const direction = options.inward ? -1 : 1;
-    const nx = (dx / dist) * direction;
-    const ny = (dy / dist) * direction;
-    const force = options.strength * Math.pow(influence, options.power ?? 1);
-    const response = 1 / Math.max(0.25, b.massFactor);
-
-    b.vx += nx * force * dt * response;
-    b.vy += ny * force * dt * response;
+    const delta = computeRadialForceDelta({
+      balloonX: b.x,
+      balloonY: b.y,
+      pointerX: px,
+      pointerY: py,
+      dt,
+      inward: options.inward,
+      strength: options.strength,
+      power: options.power,
+      toolRadius: TOOL_RADIUS,
+      massFactor: b.massFactor,
+    });
+    b.vx += delta.dvx;
+    b.vy += delta.dvy;
   }
 
   _applyImpulsePulse(px, py, inward, magnitude) {
     const b = this.balloon;
-    const dx = b.x - px;
-    const dy = b.y - py;
-    const dist = Math.hypot(dx, dy) || 1;
-
-    const influence = clamp(1 - dist / (TOOL_RADIUS * 1.1), 0, 1);
-    if (influence <= 0) {
-      return;
-    }
-
-    const direction = inward ? -1 : 1;
-    const nx = (dx / dist) * direction;
-    const ny = (dy / dist) * direction;
-    const impulse = magnitude * Math.pow(influence, 0.72);
-    const response = 1 / Math.max(0.25, b.massFactor);
-
-    b.vx += nx * impulse * response;
-    b.vy += ny * impulse * response;
+    const delta = computeRadialImpulseDelta({
+      balloonX: b.x,
+      balloonY: b.y,
+      pointerX: px,
+      pointerY: py,
+      inward,
+      magnitude,
+      toolRadius: TOOL_RADIUS,
+      massFactor: b.massFactor,
+    });
+    b.vx += delta.dvx;
+    b.vy += delta.dvy;
   }
 
   _findNearestWall(px, py, maxDistance) {
