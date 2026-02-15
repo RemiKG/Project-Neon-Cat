@@ -3,6 +3,15 @@
 ## Purpose
 This document compares the current game implementation to the V2 guidelines and defines a concrete migration path from the existing codebase.
 
+## Asset Source Update (2026-02-15)
+- V2 assets are now sourced from `assetsv2/`.
+- Implementation should treat `assetsv2/` as canonical for:
+  - normal/hacker backgrounds and wall visuals
+  - neon cat visuals (normal + hacker variants)
+  - tool icon/PNG assets for drop rendering
+  - audio files (BGM + tool SFX)
+- Legacy `Assets/` references remain valid only for current v1 compatibility and should not drive new V2 wiring.
+
 ## Current Baseline (From Code)
 - One render style (dark cyber-lab look).
 - Entity is a glowing balloon.
@@ -32,6 +41,24 @@ This document compares the current game implementation to the V2 guidelines and 
 - Full physics overlays (vectors/heatmap/grid/lines) are shown in hacker mode only.
 - In normal mode, each deployed power uses lightweight pixel emissions around the dropped icon.
 
+## Assetsv2 Integration Contract
+- Add an asset manifest in code (for example `ASSET_V2` in `src/config.js`) and keep all runtime paths centralized.
+- Required runtime buckets inside `assetsv2/`:
+  - backgrounds and maze visuals for both modes
+  - cat visuals for both modes
+  - tool icon PNGs for the 6 active powers
+  - audio files:
+    - `theme.mp3`
+    - `Hacker_theme.mp3`
+    - `Cold.mp3`
+    - `Heat.mp3`
+    - `Gravity.mp3`
+    - `quantum.mp3`
+    - `vacuum.mp3`
+- Keep loader behavior resilient:
+  - if one asset fails, continue with placeholder visuals/silent fallback
+  - log missing assets with exact path for fast fix
+
 ## Current vs V2 Comparison
 
 | Area | Current | V2 Requirement | Migration Action |
@@ -59,6 +86,7 @@ Update `src/config.js`:
   - `durationSec`
   - `ammo`
   - `dropRadius`
+- Source all `iconPath` and `sfxPath` values from `assetsv2/`.
 - Rename tool IDs:
   - `mass` -> `gravity`
   - `tunneling` -> `quantumTunneling`
@@ -106,6 +134,7 @@ Update `src/renderer.js`:
 - Add a mode switch render branch:
   - `normal`: colorful cute theme, pink walls, minimal power pixels
   - `hacker`: muted/technical theme, full lens-based overlays
+- Bind backgrounds/walls/cat art from `assetsv2/` for each mode.
 - Keep gameplay global; only visual representation changes.
 - Draw dropped power icons on board while active.
 - Ensure full pressure/vacuum lines, vector arrows, warped grids, and heatmaps render only in hacker mode.
@@ -118,7 +147,7 @@ Hacker mode rule:
 
 ### 5. Cat and Stage-Driven Trail
 Update renderer + game state:
-- Replace circle-only character art with cat assets (normal/hacker variants).
+- Replace circle-only character art with cat assets from `assetsv2/` (normal/hacker variants).
 - Maintain current deterministic circular collider for stable interaction.
 - Add `stageIndex` and `rodColor` progression.
 - Make trail renderer read `stage.trailProfile` so color/shape change per stage.
@@ -132,16 +161,17 @@ Suggested stage order:
 ### 6. Audio Integration
 Add `src/audioManager.js`:
 - Loop BGM by mode:
-  - normal: `Assets/Audios/theme.mp3`
-  - hacker: `Assets/Audios/Hacker_theme.mp3`
+  - normal: `assetsv2/.../theme.mp3`
+  - hacker: `assetsv2/.../Hacker_theme.mp3`
 - Play one-shot SFX on tool drop:
-  - `Cold.mp3`, `Heat.mp3`, `Gravity.mp3`, `quantum.mp3`, `vacuum.mp3`
+  - `assetsv2/.../Cold.mp3`
+  - `assetsv2/.../Heat.mp3`
+  - `assetsv2/.../Gravity.mp3`
+  - `assetsv2/.../quantum.mp3`
+  - `assetsv2/.../vacuum.mp3`
 - Add policy-safe start gate:
   - initialize/resume audio on first pointer interaction.
 - Crossfade when mode toggles.
-
-Note:
-- Current repo snapshot does not include `Assets/Audios/` files yet; integration should handle missing assets gracefully and log a warning.
 
 ### 7. UI and Sidebar
 Update `src/uiLayout.js`, `src/renderer.js`, and state wiring:
@@ -170,10 +200,10 @@ Lens behavior:
 - `src/equationHud.js`: 6-tool map + hacker-mode gating.
 - `src/uiLayout.js`: 6-slot sidebar sizing and mode toggle hitbox.
 - `src/audioManager.js` (new): BGM + SFX orchestration.
-- `Assets/Audios/*`: required runtime assets.
+- `assetsv2/**/*`: canonical runtime assets for visuals and audio.
 
 ## Migration Milestones (Implementation Order)
-1. Manifest + state model refactor (6 tools, ammo, durations, mode, stage).
+1. Asset audit + manifest mapping from `assetsv2/` (backgrounds, cat art, tool icons, audio).
 2. Click-deploy runtime + dropped icon persistence.
 3. Physics mapping for 6 tools using active drops.
 4. Renderer split (normal/hacker) and lens gating rules.
