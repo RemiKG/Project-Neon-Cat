@@ -1,6 +1,6 @@
 ﻿import { GOAL_RADIUS, STAGES, getGoalRodPosition } from "./config.js";
 import { COLORS, LAYOUT, TOOL_BY_ID, TOOLS, VISUAL_MODES, WORLD_HEIGHT, WORLD_WIDTH } from "./config.js";
-import { ASSET_FALLBACKS, createImageRegistry } from "./assetsV2.js";
+import { createImageRegistry } from "./assetsV2.js";
 import { clamp, length } from "./math.js";
 import { getModeToggleRect, getSidebarItemRect, pointInBoard } from "./uiLayout.js";
 
@@ -21,6 +21,8 @@ const TOOL_IMAGE_KEY = {
   vacuum: "toolVacuum",
   quantumTunneling: "toolQuantumTunneling",
 };
+
+const MAX_TOOL_ICON_SIDE = 384;
 
 export class Renderer {
   constructor(ctx) {
@@ -218,7 +220,7 @@ export class Renderer {
 
       const key = TOOL_IMAGE_KEY[drop.toolId];
       const imgState = key ? this.images[key] : null;
-      if (imgState?.loaded && imgState.image) {
+      if (this._canUseToolImage(imgState)) {
         ctx.save();
         ctx.globalAlpha = 0.34 + life * 0.66;
         ctx.drawImage(imgState.image, drop.x - size * 0.5, drop.y - size * 0.5, size, size);
@@ -228,6 +230,7 @@ export class Renderer {
         ctx.arc(drop.x, drop.y, size * 0.42, 0, Math.PI * 2);
         ctx.fillStyle = withAlpha(tool.accent, 0.34 + life * 0.66);
         ctx.fill();
+        this._drawToolGlyph(drop.toolId, drop.x, drop.y, size * 0.52, "rgba(255,255,255,0.95)");
       }
 
       ctx.strokeStyle = withAlpha(tool.accent, 0.8);
@@ -449,17 +452,19 @@ export class Renderer {
 
       const key = TOOL_IMAGE_KEY[tool.id];
       const icon = key ? this.images[key] : null;
-      if (icon?.loaded && icon.image) {
+      if (this._canUseToolImage(icon)) {
         ctx.save();
         ctx.globalAlpha = isActive ? 1 : 0.86;
         ctx.drawImage(icon.image, rect.x + 18, rect.y + 10, rect.width - 36, rect.height - 24);
         ctx.restore();
       } else {
-        ctx.fillStyle = isActive ? tool.accent : "rgba(255,255,255,0.88)";
-        ctx.font = "bold 14px 'Times New Roman', serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(tool.name[0], rect.x + rect.width * 0.5, rect.y + rect.height * 0.45);
+        this._drawToolGlyph(
+          tool.id,
+          rect.x + rect.width * 0.5,
+          rect.y + rect.height * 0.45,
+          Math.min(rect.width, rect.height) * 0.42,
+          isActive ? tool.accent : "rgba(255,255,255,0.88)",
+        );
       }
 
       const ammo = ammoState[tool.id] ?? 0;
@@ -523,6 +528,121 @@ export class Renderer {
       ctx.font = "18px Cambria Math, 'Times New Roman', serif";
       ctx.fillStyle = "rgba(190,240,255,0.9)";
       ctx.fillText(gameState.liveEquation, LAYOUT.title.x, LAYOUT.title.y + 76);
+    }
+
+    ctx.restore();
+  }
+
+  _canUseToolImage(iconState) {
+    if (!iconState?.loaded || !iconState.image) {
+      return false;
+    }
+
+    const w = iconState.image.width || 0;
+    const h = iconState.image.height || 0;
+    if (w <= 0 || h <= 0) {
+      return false;
+    }
+
+    // Guard against full-scene screenshots accidentally mapped as tool icons.
+    if (Math.max(w, h) > MAX_TOOL_ICON_SIDE) {
+      return false;
+    }
+
+    return true;
+  }
+
+  _drawToolGlyph(toolId, cx, cy, size, color) {
+    const ctx = this.ctx;
+    const s = Math.max(8, size);
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.6, s * 0.085);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    switch (toolId) {
+      case "heat": {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - s * 0.55);
+        ctx.quadraticCurveTo(cx + s * 0.38, cy - s * 0.18, cx + s * 0.08, cy + s * 0.46);
+        ctx.quadraticCurveTo(cx - s * 0.12, cy + s * 0.28, cx - s * 0.1, cy + s * 0.06);
+        ctx.quadraticCurveTo(cx - s * 0.34, cy + s * 0.12, cx - s * 0.2, cy - s * 0.22);
+        ctx.closePath();
+        ctx.stroke();
+        break;
+      }
+      case "cold": {
+        for (let i = 0; i < 3; i += 1) {
+          const a = (Math.PI / 3) * i;
+          const x0 = cx + Math.cos(a) * s * 0.6;
+          const y0 = cy + Math.sin(a) * s * 0.6;
+          const x1 = cx - Math.cos(a) * s * 0.6;
+          const y1 = cy - Math.sin(a) * s * 0.6;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+        }
+        break;
+      }
+      case "gravity": {
+        ctx.beginPath();
+        ctx.arc(cx, cy, s * 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, s * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case "highPressure": {
+        for (let i = 0; i < 4; i += 1) {
+          const a = (Math.PI / 2) * i + Math.PI * 0.25;
+          const x0 = cx + Math.cos(a) * s * 0.12;
+          const y0 = cy + Math.sin(a) * s * 0.12;
+          const x1 = cx + Math.cos(a) * s * 0.62;
+          const y1 = cy + Math.sin(a) * s * 0.62;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+        }
+        break;
+      }
+      case "vacuum": {
+        for (let i = 0; i < 4; i += 1) {
+          const a = (Math.PI / 2) * i + Math.PI * 0.25;
+          const x0 = cx + Math.cos(a) * s * 0.62;
+          const y0 = cy + Math.sin(a) * s * 0.62;
+          const x1 = cx + Math.cos(a) * s * 0.12;
+          const y1 = cy + Math.sin(a) * s * 0.12;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+        }
+        break;
+      }
+      case "quantumTunneling": {
+        ctx.beginPath();
+        ctx.moveTo(cx - s * 0.55, cy + s * 0.38);
+        ctx.lineTo(cx - s * 0.55, cy - s * 0.38);
+        ctx.moveTo(cx - s * 0.55, cy - s * 0.02);
+        ctx.lineTo(cx + s * 0.45, cy - s * 0.02);
+        ctx.moveTo(cx + s * 0.05, cy - s * 0.45);
+        ctx.lineTo(cx + s * 0.05, cy + s * 0.4);
+        ctx.stroke();
+        break;
+      }
+      default: {
+        ctx.font = `${Math.round(s * 0.8)}px 'Times New Roman', serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("?", cx, cy);
+        break;
+      }
     }
 
     ctx.restore();
