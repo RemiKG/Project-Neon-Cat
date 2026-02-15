@@ -1,11 +1,12 @@
-﻿import { TOOL_BY_ID, WORLD_WIDTH, WORLD_HEIGHT } from "./config.js";
+﻿import { initialAmmoState, maxAmmoTotal, TOOL_BY_ID, VISUAL_MODES, WORLD_HEIGHT, WORLD_WIDTH } from "./config.js";
+import { tryDeployPower, totalAmmo } from "./deployRuntime.js";
+import { getLiveEquation } from "./equationHud.js";
 import { GameLoop } from "./gameLoop.js";
 import { InputHandler } from "./inputHandler.js";
 import { ParticleSystem } from "./particles.js";
 import { PhysicsEngine } from "./physicsEngine.js";
 import { Renderer } from "./renderer.js";
-import { getToolIdAtPoint, pointInBoard } from "./uiLayout.js";
-import { getLiveEquation } from "./equationHud.js";
+import { getModeAtPoint, getToolIdAtPoint, pointInBoard } from "./uiLayout.js";
 
 const canvas = document.getElementById("gameCanvas");
 canvas.width = WORLD_WIDTH;
@@ -22,13 +23,19 @@ const physics = new PhysicsEngine();
 const particles = new ParticleSystem();
 const renderer = new Renderer(ctx);
 
+const ammoState = initialAmmoState();
+const maxAmmo = maxAmmoTotal();
+
 const gameState = {
   activeTool: "heat",
-  usedTools: new Set(),
-  constantsRemaining: 10,
+  activeDrops: [],
+  ammoState,
+  maxAmmo,
+  powersReady: totalAmmo(ammoState),
   titleText: TOOL_BY_ID.heat.title,
-  applyingTool: false,
   liveEquation: "",
+  visualMode: VISUAL_MODES.normal,
+  stageIndex: 0,
 };
 
 const loop = new GameLoop({
@@ -36,7 +43,11 @@ const loop = new GameLoop({
     const control = handleInput();
     physics.update(dt, control, particles);
     particles.update(dt);
+
+    gameState.activeDrops = gameState.activeDrops.filter((drop) => drop.remaining > 0);
+    gameState.powersReady = totalAmmo(gameState.ammoState);
     gameState.liveEquation = getLiveEquation(gameState.activeTool, physics, input);
+
     input.endFrame();
   },
   render: () => {
@@ -48,35 +59,44 @@ loop.start();
 
 function handleInput() {
   const { pointerX, pointerY } = input;
-  let pointerPressedForTool = input.wasPressed;
   const pointerInBoard = pointInBoard(pointerX, pointerY);
 
+  let deployedDrop = null;
+
   if (input.wasPressed) {
-    const sidebarTool = getToolIdAtPoint(pointerX, pointerY);
-    if (sidebarTool) {
-      gameState.activeTool = sidebarTool;
-      gameState.titleText = TOOL_BY_ID[sidebarTool].title;
-      gameState.applyingTool = false;
-      pointerPressedForTool = false;
+    const mode = getModeAtPoint(pointerX, pointerY);
+    if (mode) {
+      gameState.visualMode = mode;
+    } else {
+      const sidebarTool = getToolIdAtPoint(pointerX, pointerY);
+      if (sidebarTool) {
+        gameState.activeTool = sidebarTool;
+        gameState.titleText = TOOL_BY_ID[sidebarTool].title;
+      } else {
+        deployedDrop = tryDeployPower({
+          toolId: gameState.activeTool,
+          pointerX,
+          pointerY,
+          pointerInBoard,
+          time: physics.time,
+          ammoState: gameState.ammoState,
+          activeDrops: gameState.activeDrops,
+        });
+      }
     }
-  }
-
-  const applying = input.isDown && pointerInBoard;
-  gameState.applyingTool = applying;
-
-  if (applying && !gameState.usedTools.has(gameState.activeTool)) {
-    gameState.usedTools.add(gameState.activeTool);
-    gameState.constantsRemaining = Math.max(0, 10 - gameState.usedTools.size);
   }
 
   return {
     activeTool: gameState.activeTool,
-    applying,
     pointerX,
     pointerY,
     pointerInBoard,
-    pointerPressed: pointerPressedForTool,
+    pointerPressed: input.wasPressed,
     pointerReleased: input.wasReleased,
+    visualMode: gameState.visualMode,
+    activeDrops: gameState.activeDrops,
+    deployedDrop,
+    stageIndex: gameState.stageIndex,
   };
 }
 
