@@ -1,4 +1,4 @@
-﻿import { BASE_PHYSICS, LAYOUT } from "../src/config.js";
+﻿import { createPowerDrop, LAYOUT } from "../src/config.js";
 import { ParticleSystem } from "../src/particles.js";
 import { PhysicsEngine } from "../src/physicsEngine.js";
 
@@ -11,11 +11,23 @@ function createHarness() {
   };
 }
 
-function runSteps(engine, particles, steps, controlFactory) {
+function runSteps(engine, particles, steps, activeDrops = []) {
   for (let i = 0; i < steps; i += 1) {
-    const control = controlFactory(i);
-    engine.update(dt, control, particles);
+    engine.update(
+      dt,
+      {
+        activeDrops,
+        pointerInBoard: true,
+      },
+      particles,
+    );
     particles.update(dt);
+
+    for (const drop of activeDrops) {
+      if (drop.remaining <= 0) {
+        drop.remaining = 0;
+      }
+    }
   }
 }
 
@@ -23,181 +35,102 @@ function distance(ax, ay, bx, by) {
   return Math.hypot(ax - bx, ay - by);
 }
 
-function speedOf(balloon) {
-  return Math.hypot(balloon.vx, balloon.vy);
+function speedOf(cat) {
+  return Math.hypot(cat.vx, cat.vy);
 }
 
 {
   const { engine, particles } = createHarness();
-  engine.balloon.vx = 0;
-  engine.balloon.vy = 0;
-  const startX = engine.balloon.x;
-  const startY = engine.balloon.y;
+  engine.cat.vx = 0;
+  engine.cat.vy = 0;
 
-  runSteps(
-    engine,
-    particles,
-    180,
-    () => ({ activeTool: "heat", applying: false, pointerX: 0, pointerY: 0, pointerPressed: false }),
-  );
+  const drop = createPowerDrop("heat", engine.cat.x - 90, engine.cat.y, 0);
+  runSteps(engine, particles, 35, [drop]);
 
-  const drift = distance(startX, startY, engine.balloon.x, engine.balloon.y);
-  if (drift > 0.25) {
-    throw new Error(`top-down no-gravity check failed, drift=${drift.toFixed(3)}`);
+  if (engine.cat.radius <= 35) {
+    throw new Error("heat did not meaningfully expand cat");
+  }
+  if (engine.cat.vx <= 20) {
+    throw new Error("heat did not produce outward push");
   }
 }
 
 {
   const { engine, particles } = createHarness();
-  const baseRadius = engine.balloon.radius;
-  const px = engine.balloon.x - 80;
-  const py = engine.balloon.y;
+  engine.cat.vx = 220;
+  engine.cat.vy = -70;
 
-  runSteps(
-    engine,
-    particles,
-    32,
-    () => ({ activeTool: "heat", applying: true, pointerX: px, pointerY: py, pointerPressed: false }),
-  );
+  const farCold = createPowerDrop("cold", engine.cat.x + 300, engine.cat.y + 200, 0);
+  const startRemain = farCold.remaining;
+  runSteps(engine, particles, 30, [farCold]);
 
-  if (engine.balloon.radius <= baseRadius + 1.5) {
-    throw new Error("heat did not meaningfully expand balloon");
+  if (Math.abs(farCold.remaining - startRemain) > 0.001) {
+    throw new Error("cold timer should not drain while not overlapping cat");
   }
-  if (engine.balloon.temperature <= 0.25) {
-    throw new Error("heat did not meaningfully increase temperature");
+
+  farCold.x = engine.cat.x;
+  farCold.y = engine.cat.y;
+  runSteps(engine, particles, 30, [farCold]);
+
+  if (farCold.remaining >= startRemain - 0.2) {
+    throw new Error("cold timer should drain while overlapping cat");
   }
-  if (engine.balloon.vx <= 18) {
-    throw new Error("heat did not meaningfully push outward");
-  }
-}
-
-{
-  const coldHarness = createHarness();
-  const baseHarness = createHarness();
-
-  coldHarness.engine.balloon.vx = 320;
-  coldHarness.engine.balloon.vy = -140;
-  baseHarness.engine.balloon.vx = 320;
-  baseHarness.engine.balloon.vy = -140;
-
-  const px = coldHarness.engine.balloon.x;
-  const py = coldHarness.engine.balloon.y;
-
-  runSteps(
-    coldHarness.engine,
-    coldHarness.particles,
-    28,
-    () => ({ activeTool: "cold", applying: true, pointerX: px, pointerY: py, pointerPressed: false }),
-  );
-
-  runSteps(
-    baseHarness.engine,
-    baseHarness.particles,
-    28,
-    () => ({ activeTool: "heat", applying: false, pointerX: px, pointerY: py, pointerPressed: false }),
-  );
-
-  const coldSpeed = speedOf(coldHarness.engine.balloon);
-  const baseSpeed = speedOf(baseHarness.engine.balloon);
-
-  if (coldHarness.engine.balloon.radius >= 31) {
-    throw new Error("cold did not meaningfully shrink balloon");
-  }
-  if (coldHarness.engine.balloon.temperature >= -0.2) {
-    throw new Error("cold did not meaningfully cool balloon");
-  }
-  if (coldSpeed >= baseSpeed * 0.78) {
-    throw new Error("cold did not make balloon meaningfully heavier/slower");
+  if (engine.cat.radius >= 34) {
+    throw new Error("cold did not shrink cat");
   }
 }
 
 {
   const { engine, particles } = createHarness();
-  engine.balloon.x = LAYOUT.board.x + 420;
-  engine.balloon.y = LAYOUT.board.y + 340;
-  engine.balloon.vx = 0;
-  engine.balloon.vy = 0;
+  engine.cat.x = LAYOUT.board.x + 420;
+  engine.cat.y = LAYOUT.board.y + 340;
+  engine.cat.vx = 0;
+  engine.cat.vy = 0;
 
-  const px = engine.balloon.x + 260;
-  const py = engine.balloon.y - 30;
-  const startDist = distance(engine.balloon.x, engine.balloon.y, px, py);
+  const gravity = createPowerDrop("gravity", engine.cat.x + 260, engine.cat.y - 30, 0);
+  const startDist = distance(engine.cat.x, engine.cat.y, gravity.x, gravity.y);
 
-  runSteps(
-    engine,
-    particles,
-    40,
-    () => ({ activeTool: "mass", applying: true, pointerX: px, pointerY: py, pointerPressed: false }),
-  );
+  runSteps(engine, particles, 60, [gravity]);
 
-  const endDist = distance(engine.balloon.x, engine.balloon.y, px, py);
-  if (endDist >= startDist - 18) {
-    throw new Error("mass did not meaningfully attract toward pointer");
+  const endDist = distance(engine.cat.x, engine.cat.y, gravity.x, gravity.y);
+  if (endDist >= startDist - 20) {
+    throw new Error("gravity did not meaningfully attract cat");
   }
 }
 
 {
   const { engine, particles } = createHarness();
-  engine.balloon.x = LAYOUT.board.x + 420;
-  engine.balloon.y = LAYOUT.board.y + 340;
-  engine.balloon.vx = 0;
-  engine.balloon.vy = 0;
+  engine.cat.x = LAYOUT.board.x + 660;
+  engine.cat.y = LAYOUT.board.y + 360;
+  engine.cat.vx = 0;
+  engine.cat.vy = 0;
 
-  const px = engine.balloon.x + 260;
-  const py = engine.balloon.y - 30;
-  const startDist = distance(engine.balloon.x, engine.balloon.y, px, py);
+  const drop = createPowerDrop("highPressure", engine.cat.x - 85, engine.cat.y, 0);
+  runSteps(engine, particles, 6, [drop]);
 
-  runSteps(
-    engine,
-    particles,
-    40,
-    () => ({ activeTool: "darkEnergy", applying: true, pointerX: px, pointerY: py, pointerPressed: false }),
-  );
-
-  const endDist = distance(engine.balloon.x, engine.balloon.y, px, py);
-  if (endDist <= startDist + 18) {
-    throw new Error("darkEnergy did not meaningfully repel from pointer");
+  if (engine.cat.vx <= 140) {
+    throw new Error("highPressure did not create strong outward impulse");
+  }
+  if (particles.items.length < 10) {
+    throw new Error("highPressure did not spawn burst particles");
   }
 }
 
 {
   const { engine, particles } = createHarness();
-  engine.balloon.x = LAYOUT.board.x + 660;
-  engine.balloon.y = LAYOUT.board.y + 360;
-  engine.balloon.vx = 0;
-  engine.balloon.vy = 0;
+  engine.cat.x = LAYOUT.board.x + 660;
+  engine.cat.y = LAYOUT.board.y + 360;
+  engine.cat.vx = 0;
+  engine.cat.vy = 0;
 
-  const px = engine.balloon.x - 85;
-  const py = engine.balloon.y;
+  const drop = createPowerDrop("vacuum", engine.cat.x - 85, engine.cat.y, 0);
+  runSteps(engine, particles, 6, [drop]);
 
-  engine.update(dt, { activeTool: "highPressure", applying: true, pointerX: px, pointerY: py, pointerPressed: true }, particles);
-  particles.update(dt);
-
-  if (engine.balloon.vx <= 160) {
-    throw new Error("highPressure did not create a strong outward impulse");
+  if (engine.cat.vx >= -140) {
+    throw new Error("vacuum did not create strong inward pull");
   }
-  if (particles.items.length < 12) {
-    throw new Error("highPressure did not spawn enough particles");
-  }
-}
-
-{
-  const { engine, particles } = createHarness();
-  engine.balloon.x = LAYOUT.board.x + 660;
-  engine.balloon.y = LAYOUT.board.y + 360;
-  engine.balloon.vx = 0;
-  engine.balloon.vy = 0;
-
-  const px = engine.balloon.x - 85;
-  const py = engine.balloon.y;
-
-  engine.update(dt, { activeTool: "vacuum", applying: true, pointerX: px, pointerY: py, pointerPressed: true }, particles);
-  particles.update(dt);
-
-  if (engine.balloon.vx >= -160) {
-    throw new Error("vacuum did not create a strong inward pull");
-  }
-  if (particles.items.length < 12) {
-    throw new Error("vacuum did not spawn enough sink particles");
+  if (particles.items.length < 10) {
+    throw new Error("vacuum did not spawn sink particles");
   }
 }
 
@@ -205,128 +138,50 @@ function speedOf(balloon) {
   const wallX = LAYOUT.board.x + LAYOUT.board.width - 300;
   const y = LAYOUT.board.y + 520;
 
-  const blockedHarness = createHarness();
-  blockedHarness.engine.balloon.x = wallX - 95;
-  blockedHarness.engine.balloon.y = y;
-  blockedHarness.engine.balloon.vx = 420;
-  blockedHarness.engine.balloon.vy = 0;
+  const blocked = createHarness();
+  blocked.engine.cat.x = wallX - 95;
+  blocked.engine.cat.y = y;
+  blocked.engine.cat.vx = 420;
+  blocked.engine.cat.vy = 0;
 
-  runSteps(
-    blockedHarness.engine,
-    blockedHarness.particles,
-    90,
-    () => ({ activeTool: "heat", applying: false, pointerX: wallX, pointerY: y, pointerPressed: false }),
-  );
+  runSteps(blocked.engine, blocked.particles, 90, []);
 
-  const blockedX = blockedHarness.engine.balloon.x;
+  const blockedX = blocked.engine.cat.x;
 
-  const tunnelHarness = createHarness();
-  tunnelHarness.engine.balloon.x = wallX - 95;
-  tunnelHarness.engine.balloon.y = y;
-  tunnelHarness.engine.balloon.vx = 420;
-  tunnelHarness.engine.balloon.vy = 0;
+  const tunnel = createHarness();
+  tunnel.engine.cat.x = wallX - 95;
+  tunnel.engine.cat.y = y;
+  tunnel.engine.cat.vx = 420;
+  tunnel.engine.cat.vy = 0;
 
-  runSteps(
-    tunnelHarness.engine,
-    tunnelHarness.particles,
-    90,
-    () => ({ activeTool: "tunneling", applying: true, pointerX: wallX, pointerY: y, pointerPressed: true }),
-  );
+  const drop = createPowerDrop("quantumTunneling", wallX, y, 0);
+  runSteps(tunnel.engine, tunnel.particles, 90, [drop]);
 
-  const tunnelX = tunnelHarness.engine.balloon.x;
-  const radius = tunnelHarness.engine.balloon.radius;
+  const tunnelX = tunnel.engine.cat.x;
+  const radius = tunnel.engine.cat.radius;
 
   if (blockedX > wallX - radius + 2) {
-    throw new Error("baseline collision check failed for tunneling comparison");
+    throw new Error("baseline collision check failed");
   }
   if (tunnelX <= wallX + radius + 10) {
-    throw new Error("tunneling did not meaningfully pass through a wall segment");
+    throw new Error("quantum tunneling did not pass through wall");
   }
-  if (tunnelHarness.engine.disabledWalls.size === 0 && !tunnelHarness.engine.tunnelPreview) {
-    throw new Error("tunneling did not target wall segments");
-  }
-}
-
-{
-  const viscous = createHarness();
-  const baseline = createHarness();
-
-  viscous.engine.balloon.vx = 420;
-  viscous.engine.balloon.vy = 60;
-  baseline.engine.balloon.vx = 420;
-  baseline.engine.balloon.vy = 60;
-
-  runSteps(
-    viscous.engine,
-    viscous.particles,
-    12,
-    () => ({ activeTool: "viscosity", applying: true, pointerX: 800, pointerY: 400, pointerPressed: false }),
-  );
-  runSteps(
-    baseline.engine,
-    baseline.particles,
-    12,
-    () => ({ activeTool: "heat", applying: false, pointerX: 800, pointerY: 400, pointerPressed: false }),
-  );
-
-  if (speedOf(viscous.engine.balloon) >= speedOf(baseline.engine.balloon) * 0.55) {
-    throw new Error("viscosity did not meaningfully brake velocity");
-  }
-}
-
-{
-  const base = createHarness();
-  const elastic = createHarness();
-
-  const startX = LAYOUT.board.x + base.engine.balloon.radius + 5;
-  const startY = LAYOUT.board.y + LAYOUT.board.height * 0.5;
-
-  base.engine.balloon.x = startX;
-  base.engine.balloon.y = startY;
-  base.engine.balloon.vx = -460;
-  base.engine.balloon.vy = 0;
-
-  elastic.engine.balloon.x = startX;
-  elastic.engine.balloon.y = startY;
-  elastic.engine.balloon.vx = -460;
-  elastic.engine.balloon.vy = 0;
-
-  runSteps(
-    base.engine,
-    base.particles,
-    1,
-    () => ({ activeTool: "heat", applying: false, pointerX: 0, pointerY: 0, pointerPressed: false }),
-  );
-  runSteps(
-    elastic.engine,
-    elastic.particles,
-    1,
-    () => ({ activeTool: "elasticity", applying: true, pointerX: 0, pointerY: 0, pointerPressed: false }),
-  );
-
-  if (elastic.engine.balloon.elasticity <= BASE_PHYSICS.elasticity) {
-    throw new Error("elasticity tool did not set high restitution");
-  }
-
-  if (elastic.engine.balloon.vx <= base.engine.balloon.vx + 120) {
-    throw new Error("elasticity did not create a meaningfully stronger bounce");
+  if (tunnel.engine.disabledWalls.size === 0 && !tunnel.engine.tunnelPreview) {
+    throw new Error("quantum tunneling did not target a wall segment");
   }
 }
 
 {
   const { engine, particles } = createHarness();
-  engine.balloon.vx = 0;
-  engine.balloon.vy = 0;
+  const tools = ["heat", "cold", "gravity", "highPressure", "vacuum", "quantumTunneling"];
 
-  runSteps(
-    engine,
-    particles,
-    45,
-    () => ({ activeTool: "entropy", applying: true, pointerX: 700, pointerY: 350, pointerPressed: false }),
-  );
+  for (const tool of tools) {
+    const drop = createPowerDrop(tool, engine.cat.x, engine.cat.y, 0);
+    runSteps(engine, particles, 5, [drop]);
+  }
 
-  if (speedOf(engine.balloon) <= 22) {
-    throw new Error("entropy did not inject meaningful chaotic motion");
+  if (!Number.isFinite(speedOf(engine.cat))) {
+    throw new Error("cat speed became non-finite");
   }
 }
 
