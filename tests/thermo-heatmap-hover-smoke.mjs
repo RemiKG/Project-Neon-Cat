@@ -1,4 +1,4 @@
-import { LAYOUT } from "../src/config.js";
+﻿import { LAYOUT } from "../src/config.js";
 import { Renderer } from "../src/renderer.js";
 
 function createMockCtx() {
@@ -11,11 +11,14 @@ function createMockCtx() {
     shadowBlur: 0,
     lineCap: "round",
     globalCompositeOperation: "source-over",
+    font: "12px serif",
+    textAlign: "center",
+    textBaseline: "middle",
   };
 
   return new Proxy(target, {
     get(obj, prop) {
-      if (prop === "createRadialGradient") {
+      if (prop === "createRadialGradient" || prop === "createLinearGradient") {
         return () => ({ addColorStop() {} });
       }
       if (!(prop in obj)) {
@@ -75,9 +78,9 @@ for (const toolId of ["heat", "cold"]) {
 
 {
   const thermo = createMockThermo();
-  renderer._drawFieldLens("mass", cx, cy, true, { thermo });
+  renderer._drawFieldLens("gravity", cx, cy, true, { thermo });
   if (thermo.calls !== 0) {
-    throw new Error("mass should not trigger thermo heatmap draw");
+    throw new Error("gravity should not trigger thermo heatmap draw");
   }
 }
 

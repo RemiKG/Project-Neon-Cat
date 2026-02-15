@@ -1,57 +1,98 @@
-﻿import { COLORS, LAYOUT, TOOL_BY_ID, TOOLS, WORLD_HEIGHT, WORLD_WIDTH } from "./config.js";
-import { clamp, length, lerp, valueNoise2D } from "./math.js";
-import { getSidebarItemRect, pointInBoard } from "./uiLayout.js";
+﻿import { ASSET_FALLBACKS, createImageRegistry } from "./assetsV2.js";
+import { COLORS, LAYOUT, STAGES, TOOL_BY_ID, TOOLS, VISUAL_MODES, WORLD_HEIGHT, WORLD_WIDTH } from "./config.js";
+import { clamp, length } from "./math.js";
+import { getModeToggleRect, getSidebarItemRect, pointInBoard } from "./uiLayout.js";
 
 const TOOL_OVERLAY_KIND = {
   heat: "thermal_out",
   cold: "thermal_in",
-  mass: "gravity_in",
-  darkEnergy: "gravity_out",
+  gravity: "gravity_in",
   highPressure: "pressure_out",
   vacuum: "pressure_in",
-  tunneling: "noise_purple",
-  viscosity: "noise_cold",
-  elasticity: "rings",
-  entropy: "entropy",
+  quantumTunneling: "noise_purple",
+};
+
+const TOOL_IMAGE_KEY = {
+  heat: "toolHeat",
+  cold: "toolCold",
+  gravity: "toolGravity",
+  highPressure: "toolHighPressure",
+  vacuum: "toolVacuum",
+  quantumTunneling: "toolQuantumTunneling",
 };
 
 export class Renderer {
   constructor(ctx) {
     this.ctx = ctx;
+    this.images = createImageRegistry();
   }
 
   render(physics, input, gameState, particles) {
     const ctx = this.ctx;
+    const mode = gameState.visualMode || VISUAL_MODES.normal;
 
     ctx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    this._drawBackground(gameState.activeTool);
+
+    this._drawBackground(mode);
+    if (mode === VISUAL_MODES.hacker) {
+      this._drawFieldLens(gameState.activeTool, input.pointerX, input.pointerY, pointInBoard(input.pointerX, input.pointerY), physics);
+    }
+
+    this._drawBoardFrame(mode);
+    this._drawGoalRod(gameState.stageIndex || 0);
+
+    if (mode === VISUAL_MODES.hacker) {
+      this._drawTunnelWallEffects(physics);
+    }
+
+    this._drawWalls(physics.walls, physics.disabledWalls, mode);
+    this._drawActiveDrops(gameState.activeDrops || [], mode);
+
+    if (mode === VISUAL_MODES.normal) {
+      this._drawNormalDropPixels(gameState.activeDrops || [], physics.time || 0);
+    }
+
+    if (mode === VISUAL_MODES.hacker) {
+      this._drawParticles(particles);
+    }
+
+    this._drawTrail(physics.trail, gameState.stageIndex || 0);
+    this._drawCat(physics.cat || physics.balloon, mode);
+
+    this._drawCrosshair(input.pointerX, input.pointerY, TOOL_BY_ID[gameState.activeTool]?.accent || COLORS.lineWhite);
+    this._drawSidebar(gameState.activeTool, gameState.ammoState || {});
+    this._drawModeToggle(mode);
     this._drawTitle(gameState);
-
-    this._drawFieldLens(
-      gameState.activeTool,
-      input.pointerX,
-      input.pointerY,
-      gameState.applyingTool || pointInBoard(input.pointerX, input.pointerY),
-      physics,
-    );
-
-    this._drawBoardFrame();
-    this._drawTunnelWallEffects(physics);
-    this._drawWalls(physics.walls, physics.disabledWalls);
-    this._drawParticles(particles);
-    this._drawTrail(physics.trail, physics.balloon.temperature);
-    this._drawBalloon(physics.balloon);
-
-    this._drawCrosshair(input.pointerX, input.pointerY, TOOL_BY_ID[gameState.activeTool].accent);
-    this._drawSidebar(gameState.activeTool);
-    this._drawCornerDiamond();
   }
 
-  _drawBackground(activeTool) {
+  _drawBackground(mode) {
     const ctx = this.ctx;
 
-    ctx.fillStyle = COLORS.background;
+    if (mode === VISUAL_MODES.normal) {
+      const g = ctx.createLinearGradient(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+      g.addColorStop(0, "#2d0b58");
+      g.addColorStop(0.5, "#44107e");
+      g.addColorStop(1, "#291548");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+      this._drawImageFill(this.images.backgroundNormal, 0.18);
+
+      ctx.save();
+      for (let i = 0; i < 240; i += 1) {
+        const x = (i * 83.27) % WORLD_WIDTH;
+        const y = (i * 137.11) % WORLD_HEIGHT;
+        ctx.fillStyle = i % 5 === 0 ? "rgba(255,140,220,0.32)" : "rgba(255,255,255,0.22)";
+        ctx.fillRect(x, y, 2, 2);
+      }
+      ctx.restore();
+      return;
+    }
+
+    ctx.fillStyle = COLORS.hackerBackground;
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+    this._drawImageFill(this.images.backgroundHacker, 0.14);
 
     const vignette = ctx.createRadialGradient(
       WORLD_WIDTH * 0.5,
@@ -62,48 +103,15 @@ export class Renderer {
       WORLD_WIDTH * 0.63,
     );
     vignette.addColorStop(0, "rgba(255,255,255,0.06)");
-    vignette.addColorStop(0.6, "rgba(255,255,255,0.012)");
+    vignette.addColorStop(0.6, "rgba(255,255,255,0.01)");
     vignette.addColorStop(1, "rgba(0,0,0,0.48)");
 
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-    if (activeTool === "mass" || activeTool === "darkEnergy") {
-      ctx.save();
-      ctx.strokeStyle = "rgba(89,236,255,0.17)";
-      ctx.lineWidth = 1;
-      const spacing = 36;
-
-      for (let x = 0; x <= WORLD_WIDTH; x += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, WORLD_HEIGHT);
-        ctx.stroke();
-      }
-
-      for (let y = 0; y <= WORLD_HEIGHT; y += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(WORLD_WIDTH, y);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
     ctx.save();
-    ctx.globalAlpha = 0.052;
-    for (let i = 0; i < 1400; i += 1) {
-      const x = (i * 97.31) % WORLD_WIDTH;
-      const y = (i * 189.17) % WORLD_HEIGHT;
-      const size = i % 3 === 0 ? 2 : 1;
-      ctx.fillStyle = i % 7 === 0 ? "rgba(100,200,255,0.15)" : "rgba(255,255,255,0.26)";
-      ctx.fillRect(x, y, size, size);
-    }
-    ctx.restore();
-
-    ctx.save();
-    ctx.globalAlpha = 0.1;
-    ctx.strokeStyle = "rgba(255,255,255,0.045)";
+    ctx.globalAlpha = 0.06;
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
     ctx.lineWidth = 1;
     for (let y = 0.5; y < WORLD_HEIGHT; y += 4) {
       ctx.beginPath();
@@ -111,6 +119,399 @@ export class Renderer {
       ctx.lineTo(WORLD_WIDTH, y);
       ctx.stroke();
     }
+    ctx.restore();
+  }
+
+  _drawImageFill(assetState, alpha = 1) {
+    if (!assetState?.loaded || !assetState.image) {
+      return;
+    }
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(assetState.image, 0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    ctx.restore();
+  }
+
+  _drawBoardFrame(mode) {
+    const ctx = this.ctx;
+    const board = LAYOUT.board;
+
+    ctx.save();
+    ctx.strokeStyle = mode === VISUAL_MODES.normal ? COLORS.neonPink : COLORS.lineWhite;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(board.x, board.y, board.width, board.height);
+    ctx.restore();
+  }
+
+  _drawWalls(walls, disabledWalls, mode) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineWidth = 2;
+
+    for (const wall of walls) {
+      if (wall.isFrame) {
+        continue;
+      }
+
+      const disabled = disabledWalls.has(wall.id);
+      ctx.strokeStyle = disabled
+        ? mode === VISUAL_MODES.normal
+          ? "rgba(255,130,220,0.26)"
+          : "rgba(255,255,255,0.26)"
+        : mode === VISUAL_MODES.normal
+          ? "rgba(255,95,220,0.95)"
+          : COLORS.lineWhite;
+      ctx.setLineDash(disabled ? [5, 6] : []);
+
+      ctx.beginPath();
+      ctx.moveTo(wall.a.x, wall.a.y);
+      ctx.lineTo(wall.b.x, wall.b.y);
+      ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  _drawGoalRod(stageIndex) {
+    const ctx = this.ctx;
+    const stage = STAGES[stageIndex % STAGES.length];
+    const x = LAYOUT.board.x + LAYOUT.board.width - 78;
+    const y = LAYOUT.board.y + LAYOUT.board.height * 0.5;
+
+    ctx.save();
+    ctx.strokeStyle = stage.rodColor;
+    ctx.shadowColor = stage.rodColor;
+    ctx.shadowBlur = 18;
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 52);
+    ctx.lineTo(x, y + 52);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawActiveDrops(activeDrops, mode) {
+    const ctx = this.ctx;
+    ctx.save();
+
+    for (const drop of activeDrops) {
+      if (!drop || drop.remaining <= 0) {
+        continue;
+      }
+
+      const tool = TOOL_BY_ID[drop.toolId];
+      if (!tool) {
+        continue;
+      }
+
+      const life = clamp(drop.remaining / Math.max(0.001, drop.duration), 0, 1);
+      const size = 30;
+
+      const key = TOOL_IMAGE_KEY[drop.toolId];
+      const imgState = key ? this.images[key] : null;
+      if (imgState?.loaded && imgState.image) {
+        ctx.save();
+        ctx.globalAlpha = 0.34 + life * 0.66;
+        ctx.drawImage(imgState.image, drop.x - size * 0.5, drop.y - size * 0.5, size, size);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(drop.x, drop.y, size * 0.42, 0, Math.PI * 2);
+        ctx.fillStyle = withAlpha(tool.accent, 0.34 + life * 0.66);
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = withAlpha(tool.accent, 0.8);
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(drop.x, drop.y, size * 0.65 + (1 - life) * 5, 0, Math.PI * 2);
+      ctx.stroke();
+
+      if (mode === VISUAL_MODES.hacker) {
+        ctx.strokeStyle = withAlpha(tool.accent, 0.22);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(drop.x, drop.y, Math.max(26, drop.radius * 0.55), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  _drawNormalDropPixels(activeDrops, time) {
+    const ctx = this.ctx;
+    ctx.save();
+
+    for (const drop of activeDrops) {
+      if (!drop || drop.remaining <= 0) {
+        continue;
+      }
+      const tool = TOOL_BY_ID[drop.toolId];
+      if (!tool) {
+        continue;
+      }
+
+      const life = clamp(drop.remaining / Math.max(0.001, drop.duration), 0, 1);
+      const pixelCount = 22;
+      const radius = 22 + (1 - life) * 12;
+
+      for (let i = 0; i < pixelCount; i += 1) {
+        const angle = (i / pixelCount) * Math.PI * 2 + time * 3.2;
+        const wave = ((i * 13.17 + time * 37.9) % 1 + 1) % 1;
+        const r = radius * (0.4 + wave * 0.9);
+        const x = drop.x + Math.cos(angle) * r;
+        const y = drop.y + Math.sin(angle) * r;
+        ctx.fillStyle = withAlpha(tool.accent, 0.14 + life * 0.48);
+        ctx.fillRect(x, y, 2, 2);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  _drawTrail(trail, stageIndex) {
+    if (trail.length < 2) {
+      return;
+    }
+
+    const ctx = this.ctx;
+    const stage = STAGES[stageIndex % STAGES.length];
+
+    ctx.save();
+    for (let i = 1; i < trail.length; i += 1) {
+      const prev = trail[i - 1];
+      const node = trail[i];
+      const alpha = clamp(node.life, 0, 1) * 0.86;
+
+      ctx.strokeStyle = blendAlpha(stage.trailColorA, alpha);
+      ctx.lineWidth = 1.2 + alpha * 4.4;
+      ctx.shadowColor = blendAlpha(stage.trailColorB, alpha * 0.9);
+      ctx.shadowBlur = 14 * alpha;
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.lineTo(node.x, node.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  _drawCat(cat, mode) {
+    if (!cat) {
+      return;
+    }
+
+    if (cat.tunnelGhost > 0.01) {
+      this._drawCatGhosts(cat);
+    }
+
+    const ctx = this.ctx;
+    const assetState = mode === VISUAL_MODES.normal ? this.images.catNormal : this.images.catHacker;
+    const size = cat.radius * 2.3;
+
+    if (assetState?.loaded && assetState.image) {
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.shadowColor = mode === VISUAL_MODES.normal ? COLORS.neonPink : "rgba(255,255,255,0.74)";
+      ctx.shadowBlur = 18;
+      ctx.drawImage(assetState.image, cat.x - size * 0.5, cat.y - size * 0.62, size, size);
+      ctx.restore();
+      return;
+    }
+
+    ctx.save();
+    ctx.fillStyle = mode === VISUAL_MODES.normal ? "rgba(255,220,250,0.95)" : "rgba(245,245,245,0.95)";
+    ctx.shadowColor = mode === VISUAL_MODES.normal ? "rgba(255,100,210,0.8)" : "rgba(255,255,255,0.7)";
+    ctx.shadowBlur = 24;
+
+    ctx.beginPath();
+    ctx.arc(cat.x, cat.y, cat.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    const ear = cat.radius * 0.64;
+    ctx.beginPath();
+    ctx.moveTo(cat.x - cat.radius * 0.75, cat.y - cat.radius * 0.2);
+    ctx.lineTo(cat.x - cat.radius * 0.15, cat.y - cat.radius - ear * 0.12);
+    ctx.lineTo(cat.x - cat.radius * 0.02, cat.y - cat.radius * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(cat.x + cat.radius * 0.75, cat.y - cat.radius * 0.2);
+    ctx.lineTo(cat.x + cat.radius * 0.15, cat.y - cat.radius - ear * 0.12);
+    ctx.lineTo(cat.x + cat.radius * 0.02, cat.y - cat.radius * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  _drawCatGhosts(cat) {
+    const ctx = this.ctx;
+    const ghost = clamp(cat.tunnelGhost, 0, 1);
+
+    const velocityLen = length(cat.vx, cat.vy) || 1;
+    const nx = cat.vx / velocityLen;
+    const ny = cat.vy / velocityLen;
+    const px = -ny;
+    const py = nx;
+
+    const spread = 16 * ghost;
+    const configs = [
+      { r: 255, g: 80, b: 80, ox: -spread + px * 4, oy: py * 4 },
+      { r: 110, g: 255, b: 120, ox: 0, oy: 0 },
+      { r: 80, g: 110, b: 255, ox: spread - px * 4, oy: -py * 4 },
+    ];
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    for (const c of configs) {
+      ctx.beginPath();
+      ctx.arc(cat.x + c.ox, cat.y + c.oy, cat.radius * 0.97, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${c.r},${c.g},${c.b},${0.34 + ghost * 0.26})`;
+      ctx.shadowColor = `rgba(${c.r},${c.g},${c.b},0.8)`;
+      ctx.shadowBlur = 24;
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  _drawCrosshair(x, y, accent) {
+    const ctx = this.ctx;
+    const size = LAYOUT.crosshairSize;
+
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(255,255,255,0.93)";
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 9;
+    ctx.lineCap = "round";
+
+    ctx.beginPath();
+    ctx.moveTo(x - size, y);
+    ctx.lineTo(x - 5, y);
+    ctx.moveTo(x + 5, y);
+    ctx.lineTo(x + size, y);
+    ctx.moveTo(x, y - size);
+    ctx.lineTo(x, y - 5);
+    ctx.moveTo(x, y + 5);
+    ctx.lineTo(x, y + size);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawSidebar(activeTool, ammoState) {
+    const ctx = this.ctx;
+    const sidebar = LAYOUT.sidebar;
+
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.82)";
+    ctx.fillStyle = "rgba(6, 8, 18, 0.84)";
+    roundRect(ctx, sidebar.x, sidebar.y, sidebar.width, sidebar.height, sidebar.radius);
+    ctx.fill();
+    ctx.stroke();
+
+    for (let i = 0; i < TOOLS.length; i += 1) {
+      const tool = TOOLS[i];
+      const rect = getSidebarItemRect(i);
+      const isActive = tool.id === activeTool;
+
+      if (isActive) {
+        const glow = ctx.createRadialGradient(
+          rect.x + rect.width * 0.5,
+          rect.y + rect.height * 0.5,
+          2,
+          rect.x + rect.width * 0.5,
+          rect.y + rect.height * 0.5,
+          rect.width * 0.7,
+        );
+        glow.addColorStop(0, `${tool.accent}cc`);
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4);
+      }
+
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.beginPath();
+      ctx.moveTo(rect.x + 8, rect.y);
+      ctx.lineTo(rect.x + rect.width - 8, rect.y);
+      ctx.stroke();
+
+      const key = TOOL_IMAGE_KEY[tool.id];
+      const icon = key ? this.images[key] : null;
+      if (icon?.loaded && icon.image) {
+        ctx.save();
+        ctx.globalAlpha = isActive ? 1 : 0.86;
+        ctx.drawImage(icon.image, rect.x + 18, rect.y + 10, rect.width - 36, rect.height - 24);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = isActive ? tool.accent : "rgba(255,255,255,0.88)";
+        ctx.font = "bold 14px 'Times New Roman', serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(tool.name[0], rect.x + rect.width * 0.5, rect.y + rect.height * 0.45);
+      }
+
+      const ammo = ammoState[tool.id] ?? 0;
+      ctx.font = "12px 'Times New Roman', serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = ammo > 0 ? "rgba(255,255,255,0.92)" : "rgba(255,110,110,0.9)";
+      ctx.fillText(`x${ammo}`, rect.x + rect.width - 8, rect.y + rect.height - 6);
+    }
+
+    ctx.restore();
+  }
+
+  _drawModeToggle(mode) {
+    const ctx = this.ctx;
+    const rect = getModeToggleRect();
+
+    ctx.save();
+    ctx.fillStyle = "rgba(6, 8, 18, 0.9)";
+    ctx.strokeStyle = "rgba(255,255,255,0.52)";
+    ctx.lineWidth = 2;
+    roundRect(ctx, rect.x, rect.y, rect.width, rect.height, rect.radius);
+    ctx.fill();
+    ctx.stroke();
+
+    const half = rect.width * 0.5;
+    ctx.fillStyle = mode === VISUAL_MODES.normal ? "rgba(255, 120, 220, 0.35)" : "rgba(140, 220, 255, 0.22)";
+    roundRect(ctx, mode === VISUAL_MODES.normal ? rect.x + 2 : rect.x + half, rect.y + 2, half - 2, rect.height - 4, 8);
+    ctx.fill();
+
+    ctx.font = "16px 'Times New Roman', serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.fillText("Normal", rect.x + half * 0.5, rect.y + rect.height * 0.5);
+    ctx.fillText("Hacker", rect.x + half + half * 0.5, rect.y + rect.height * 0.5);
+    ctx.restore();
+  }
+
+  _drawTitle(gameState) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = COLORS.lineWhite;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "56px 'Times New Roman', serif";
+    ctx.fillText(gameState.titleText || "The Ten Commandments V2", LAYOUT.title.x, LAYOUT.title.y);
+
+    ctx.font = "24px 'Times New Roman', serif";
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    ctx.fillText(`Powers Ready: ${gameState.powersReady ?? 0}/${gameState.maxAmmo ?? 0}`, LAYOUT.title.x, LAYOUT.title.y + 34);
+
+    if (gameState.visualMode === VISUAL_MODES.hacker && gameState.liveEquation) {
+      ctx.font = "18px Cambria Math, 'Times New Roman', serif";
+      ctx.fillStyle = "rgba(190,240,255,0.9)";
+      ctx.fillText(gameState.liveEquation, LAYOUT.title.x, LAYOUT.title.y + 62);
+    }
+
     ctx.restore();
   }
 
@@ -122,7 +523,11 @@ export class Renderer {
     const ctx = this.ctx;
     const lensRadius = LAYOUT.lensRadius;
     const overlayKind = TOOL_OVERLAY_KIND[activeTool];
-    const useWorldLens = overlayKind === "gravity_in" || overlayKind === "gravity_out";
+    const useWorldLens = overlayKind === "gravity_in";
+
+    if (!overlayKind) {
+      return;
+    }
 
     ctx.save();
     if (useWorldLens) {
@@ -131,7 +536,7 @@ export class Renderer {
       this._clipBoardLens(cx, cy, lensRadius);
     }
 
-    if (activeTool === "heat" || activeTool === "cold" || activeTool === "highPressure" || activeTool === "vacuum" || activeTool === "entropy") {
+    if (activeTool === "heat" || activeTool === "cold" || activeTool === "highPressure" || activeTool === "vacuum") {
       this._drawThermoHeatmap(physics?.thermo, cx, cy, activeTool);
     }
 
@@ -145,9 +550,6 @@ export class Renderer {
       case "gravity_in":
         this._drawGravityField(cx, cy, true, { x: 0, y: 0, width: WORLD_WIDTH, height: WORLD_HEIGHT });
         break;
-      case "gravity_out":
-        this._drawGravityField(cx, cy, false, { x: 0, y: 0, width: WORLD_WIDTH, height: WORLD_HEIGHT });
-        break;
       case "pressure_out":
         this._drawPressureField(cx, cy, false);
         break;
@@ -157,15 +559,6 @@ export class Renderer {
       case "noise_purple":
         this._drawNoiseCloud(cx, cy, "rgba(205,76,255,0.55)");
         break;
-      case "noise_cold":
-        this._drawNoiseCloud(cx, cy, "rgba(180,220,255,0.42)");
-        break;
-      case "rings":
-        this._drawRingField(cx, cy, "rgba(255,255,255,0.5)");
-        break;
-      case "entropy":
-        this._drawEntropyField(cx, cy, physics?.thermo);
-        break;
       default:
         break;
     }
@@ -173,10 +566,10 @@ export class Renderer {
     ctx.restore();
 
     ctx.save();
-    ctx.strokeStyle = TOOL_BY_ID[activeTool].accent;
+    ctx.strokeStyle = TOOL_BY_ID[activeTool]?.accent || "rgba(255,255,255,0.8)";
     ctx.lineWidth = 1.4;
     ctx.globalAlpha = 0.55;
-    ctx.shadowColor = TOOL_BY_ID[activeTool].accent;
+    ctx.shadowColor = TOOL_BY_ID[activeTool]?.accent || "rgba(255,255,255,0.8)";
     ctx.shadowBlur = 16;
     ctx.beginPath();
     ctx.arc(cx, cy, lensRadius, 0, Math.PI * 2);
@@ -267,7 +660,6 @@ export class Renderer {
       const world = thermo.cellToWorld(cellX, cellY);
       const temp = thermo.temp[index];
       const pressure = thermo.pressure[index];
-      const entropy = thermo.entropy[index];
 
       let r = 255;
       let g = 255;
@@ -307,15 +699,6 @@ export class Renderer {
           a = (0.07 + 0.26 * v) * influence;
           break;
         }
-        case "entropy": {
-          const e = clamp(entropy / 2.2, 0, 1);
-          const mixed = clamp((temp - pressure + 1) * 0.5, 0, 1);
-          r = Math.round(165 + 75 * mixed);
-          g = Math.round(120 + 80 * (1 - Math.abs(mixed - 0.5) * 2));
-          b = Math.round(200 + 42 * (1 - mixed));
-          a = (0.09 + 0.28 * e) * influence;
-          break;
-        }
         default:
           break;
       }
@@ -324,56 +707,6 @@ export class Renderer {
       ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
       ctx.fillRect(world.x - half, world.y - half, thermo.cellSize + 0.6, thermo.cellSize + 0.6);
     });
-    ctx.restore();
-  }
-
-  _drawEntropyField(cx, cy, thermo = null) {
-    const ctx = this.ctx;
-    const board = LAYOUT.board;
-    const spacing = thermo ? thermo.cellSize : 36;
-    const radius = LAYOUT.lensRadius;
-
-    ctx.save();
-    for (let y = board.y + spacing * 0.5; y < board.y + board.height; y += spacing) {
-      for (let x = board.x + spacing * 0.5; x < board.x + board.width; x += spacing) {
-        const dx = x - cx;
-        const dy = y - cy;
-        const dist = Math.hypot(dx, dy);
-        if (dist > radius * 1.05) {
-          continue;
-        }
-
-        const influence = clamp(1 - dist / radius, 0, 1);
-
-        let vx;
-        let vy;
-        let len;
-
-        if (thermo) {
-          const sample = thermo.sample(x, y);
-          vx = sample.gradTempX - sample.gradPressureX - sample.gradPressureY * 0.7;
-          vy = sample.gradTempY - sample.gradPressureY + sample.gradPressureX * 0.7;
-          len = lerp(5, 19, influence) * (0.5 + sample.entropy * 0.45);
-        } else {
-          const noise = valueNoise2D(x * 0.04, y * 0.04);
-          const angle = noise * Math.PI * 2;
-          vx = Math.cos(angle);
-          vy = Math.sin(angle);
-          len = lerp(4, 16, influence);
-        }
-
-        const norm = Math.hypot(vx, vy) || 1;
-        const ex = x + (vx / norm) * len;
-        const ey = y + (vy / norm) * len;
-
-        ctx.strokeStyle = `rgba(255,255,255,${0.18 + influence * 0.72})`;
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(ex, ey);
-        ctx.stroke();
-      }
-    }
     ctx.restore();
   }
 
@@ -389,7 +722,7 @@ export class Renderer {
 
     ctx.save();
     ctx.globalAlpha = 0.65;
-    for (let i = 0; i < 450; i += 1) {
+    for (let i = 0; i < 350; i += 1) {
       const angle = i * 0.41;
       const ring = ((i * 73) % 1000) / 1000;
       const r = ring * radius;
@@ -399,21 +732,6 @@ export class Renderer {
       const h = i % 3 === 0 ? 2 : 1;
       ctx.fillStyle = i % 4 === 0 ? "rgba(255,255,255,0.52)" : "rgba(255,255,255,0.24)";
       ctx.fillRect(x, y, w, h);
-    }
-    ctx.restore();
-  }
-
-  _drawRingField(cx, cy, color) {
-    const ctx = this.ctx;
-    ctx.save();
-    for (let i = 0; i < 4; i += 1) {
-      const radius = 36 + i * 44;
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.55 - i * 0.1;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.stroke();
     }
     ctx.restore();
   }
@@ -620,41 +938,6 @@ export class Renderer {
     }
   }
 
-  _drawBoardFrame() {
-    const ctx = this.ctx;
-    const board = LAYOUT.board;
-
-    ctx.save();
-    ctx.strokeStyle = COLORS.lineWhite;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(board.x, board.y, board.width, board.height);
-    ctx.restore();
-  }
-
-  _drawWalls(walls, disabledWalls) {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.lineWidth = 2;
-
-    for (const wall of walls) {
-      if (wall.isFrame) {
-        continue;
-      }
-
-      const disabled = disabledWalls.has(wall.id);
-      ctx.strokeStyle = disabled ? "rgba(255,255,255,0.28)" : COLORS.lineWhite;
-      ctx.setLineDash(disabled ? [5, 6] : []);
-
-      ctx.beginPath();
-      ctx.moveTo(wall.a.x, wall.a.y);
-      ctx.lineTo(wall.b.x, wall.b.y);
-      ctx.stroke();
-    }
-
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
   _drawParticles(particles) {
     if (!particles || particles.items.length === 0) {
       return;
@@ -693,448 +976,31 @@ export class Renderer {
 
     ctx.restore();
   }
-
-  _drawTrail(trail, temperature) {
-    if (trail.length < 2) {
-      return;
-    }
-
-    const ctx = this.ctx;
-    const warm = Math.max(temperature, 0);
-    const cool = Math.max(-temperature, 0);
-
-    ctx.save();
-    for (let i = 1; i < trail.length; i += 1) {
-      const prev = trail[i - 1];
-      const node = trail[i];
-      const alpha = clamp(node.life, 0, 1) * 0.86;
-
-      const r = Math.round(255 - cool * 28);
-      const g = Math.round(255 - warm * 24 + cool * 8);
-      const b = Math.round(255 - warm * 54 + cool * 38);
-
-      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
-      ctx.lineWidth = 1.2 + alpha * 4.8;
-      ctx.shadowColor = `rgba(${r},${g},${b},0.58)`;
-      ctx.shadowBlur = 16 * alpha;
-      ctx.beginPath();
-      ctx.moveTo(prev.x, prev.y);
-      ctx.lineTo(node.x, node.y);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  _drawBalloon(balloon) {
-    const ctx = this.ctx;
-    const warm = Math.max(balloon.temperature, 0);
-    const cool = Math.max(-balloon.temperature, 0);
-
-    if (balloon.tunnelGhost > 0.01) {
-      this._drawBalloonGhosts(balloon);
-    }
-
-    ctx.save();
-
-    if (warm > 0.02) {
-      const heatGlow = ctx.createRadialGradient(
-        balloon.x,
-        balloon.y,
-        balloon.radius * 0.8,
-        balloon.x,
-        balloon.y,
-        balloon.radius * 2.6,
-      );
-      heatGlow.addColorStop(0, `rgba(255,160,70,${warm * 0.46})`);
-      heatGlow.addColorStop(1, "rgba(255,160,70,0)");
-      ctx.fillStyle = heatGlow;
-      ctx.fillRect(balloon.x - balloon.radius * 3, balloon.y - balloon.radius * 3, balloon.radius * 6, balloon.radius * 6);
-    }
-
-    const fillR = Math.round(252 - cool * 18);
-    const fillG = Math.round(252 - warm * 24 + cool * 4);
-    const fillB = Math.round(252 - warm * 44 + cool * 26);
-
-    ctx.beginPath();
-    ctx.arc(balloon.x, balloon.y, balloon.radius, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${fillR},${fillG},${fillB},0.985)`;
-
-    if (warm >= cool) {
-      const shadowAlpha = clamp(0.7 + warm * 0.3, 0.6, 1);
-      ctx.shadowColor = `rgba(255,${Math.round(220 - warm * 70)},${Math.round(180 - warm * 110)},${shadowAlpha})`;
-    } else {
-      const shadowAlpha = clamp(0.7 + cool * 0.3, 0.6, 1);
-      ctx.shadowColor = `rgba(${Math.round(220 - cool * 40)},${Math.round(242 - cool * 20)},255,${shadowAlpha})`;
-    }
-
-    ctx.shadowBlur = 56;
-    ctx.fill();
-
-    if (cool > 0.03) {
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = `rgba(200,235,255,${0.3 + cool * 0.35})`;
-      ctx.stroke();
-    }
-
-    const spec = ctx.createRadialGradient(
-      balloon.x - balloon.radius * 0.24,
-      balloon.y - balloon.radius * 0.35,
-      balloon.radius * 0.05,
-      balloon.x,
-      balloon.y,
-      balloon.radius,
-    );
-    spec.addColorStop(0, "rgba(255,255,255,0.6)");
-    spec.addColorStop(1, "rgba(255,255,255,0.02)");
-    ctx.fillStyle = spec;
-    ctx.fill();
-    ctx.restore();
-  }
-
-  _drawBalloonGhosts(balloon) {
-    const ctx = this.ctx;
-    const ghost = clamp(balloon.tunnelGhost, 0, 1);
-
-    const velocityLen = length(balloon.vx, balloon.vy) || 1;
-    const nx = balloon.vx / velocityLen;
-    const ny = balloon.vy / velocityLen;
-    const px = -ny;
-    const py = nx;
-
-    const spread = 18 * ghost;
-    const configs = [
-      { r: 255, g: 80, b: 80, ox: -spread + px * 4, oy: py * 4 },
-      { r: 110, g: 255, b: 120, ox: 0, oy: 0 },
-      { r: 80, g: 110, b: 255, ox: spread - px * 4, oy: -py * 4 },
-    ];
-
-    ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    for (const c of configs) {
-      ctx.beginPath();
-      ctx.arc(balloon.x + c.ox, balloon.y + c.oy, balloon.radius * 0.97, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${c.r},${c.g},${c.b},${0.34 + ghost * 0.26})`;
-      ctx.shadowColor = `rgba(${c.r},${c.g},${c.b},0.8)`;
-      ctx.shadowBlur = 24;
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  _drawCrosshair(x, y, accent) {
-    const ctx = this.ctx;
-    const size = LAYOUT.crosshairSize;
-
-    ctx.save();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,0.93)";
-    ctx.shadowColor = accent;
-    ctx.shadowBlur = 9;
-    ctx.lineCap = "round";
-
-    ctx.beginPath();
-    ctx.moveTo(x - size, y);
-    ctx.lineTo(x - 5, y);
-    ctx.moveTo(x + 5, y);
-    ctx.lineTo(x + size, y);
-    ctx.moveTo(x, y - size);
-    ctx.lineTo(x, y - 5);
-    ctx.moveTo(x, y + 5);
-    ctx.lineTo(x, y + size);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  _drawSidebar(activeTool) {
-    const ctx = this.ctx;
-    const sidebar = LAYOUT.sidebar;
-
-    ctx.save();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(255,255,255,0.92)";
-    ctx.fillStyle = "rgba(4, 9, 12, 0.86)";
-    roundRect(ctx, sidebar.x, sidebar.y, sidebar.width, sidebar.height, sidebar.radius);
-    ctx.fill();
-    ctx.stroke();
-
-    for (let i = 0; i < TOOLS.length; i += 1) {
-      const tool = TOOLS[i];
-      const rect = getSidebarItemRect(i);
-      const isActive = tool.id === activeTool;
-
-      if (isActive) {
-        const glow = ctx.createRadialGradient(
-          rect.x + rect.width * 0.5,
-          rect.y + rect.height * 0.5,
-          2,
-          rect.x + rect.width * 0.5,
-          rect.y + rect.height * 0.5,
-          rect.width * 0.7,
-        );
-        glow.addColorStop(0, `${tool.accent}cc`);
-        glow.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = glow;
-        ctx.fillRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4);
-      }
-
-      ctx.strokeStyle = "rgba(255,255,255,0.22)";
-      ctx.beginPath();
-      ctx.moveTo(rect.x + 8, rect.y);
-      ctx.lineTo(rect.x + rect.width - 8, rect.y);
-      ctx.stroke();
-
-      const iconColor = isActive ? tool.accent : "rgba(255,255,255,0.9)";
-      this._drawSidebarGlyph(tool.id, rect, iconColor);
-    }
-
-    ctx.restore();
-  }
-
-  _drawSidebarGlyph(toolId, rect, color) {
-    const cx = rect.x + rect.width * 0.5;
-    const cy = rect.y + rect.height * 0.54;
-    const ctx = this.ctx;
-
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-
-    switch (toolId) {
-      case "heat":
-        this._drawThermometerIcon(cx, cy, true);
-        break;
-      case "cold":
-        this._drawThermometerIcon(cx, cy, false);
-        break;
-      case "mass":
-        this._drawVectorIcon(cx, cy, "M", true);
-        break;
-      case "darkEnergy":
-        this._drawVectorIcon(cx, cy, "L", false);
-        break;
-      case "highPressure":
-        this._drawVectorIcon(cx, cy, "P", false);
-        break;
-      case "vacuum":
-        this._drawVectorIcon(cx, cy, "P", true);
-        break;
-      case "tunneling":
-        this._drawPsiIcon(cx, cy);
-        break;
-      case "viscosity":
-        this._drawViscosityIcon(cx, cy);
-        break;
-      case "elasticity":
-        this._drawSpringIcon(cx, cy);
-        break;
-      case "entropy":
-        this._drawEntropyIcon(cx, cy);
-        break;
-      default:
-        ctx.font = "30px Times New Roman";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("?", cx, cy);
-        break;
-    }
-
-    ctx.restore();
-  }
-
-  _drawThermometerIcon(cx, cy, hot) {
-    const ctx = this.ctx;
-    const top = cy - 18;
-    const bottom = cy + 12;
-
-    ctx.beginPath();
-    ctx.arc(cx - 10, bottom + 4, 6, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(cx - 10, top);
-    ctx.lineTo(cx - 10, bottom);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(cx + 3, cy + (hot ? -8 : 8));
-    ctx.lineTo(cx + 16, cy + (hot ? -8 : 8));
-    ctx.stroke();
-
-    ctx.beginPath();
-    if (hot) {
-      ctx.moveTo(cx + 14, cy - 11);
-      ctx.lineTo(cx + 16, cy - 8);
-      ctx.lineTo(cx + 14, cy - 5);
-    } else {
-      ctx.moveTo(cx + 14, cy + 5);
-      ctx.lineTo(cx + 16, cy + 8);
-      ctx.lineTo(cx + 14, cy + 11);
-    }
-    ctx.stroke();
-
-    ctx.font = "15px Times New Roman";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText("dT", cx + 18, cy + (hot ? -8 : 8));
-  }
-
-  _drawVectorIcon(cx, cy, letter, inward) {
-    const ctx = this.ctx;
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.font = "26px Times New Roman";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(letter, cx, cy + 1);
-
-    const arrows = [
-      { x: 0, y: -21 },
-      { x: 21, y: 0 },
-      { x: 0, y: 21 },
-      { x: -21, y: 0 },
-    ];
-
-    for (const arrow of arrows) {
-      const x0 = cx + arrow.x * (inward ? 1 : 0.35);
-      const y0 = cy + arrow.y * (inward ? 1 : 0.35);
-      const x1 = cx + arrow.x * (inward ? 0.35 : 1);
-      const y1 = cy + arrow.y * (inward ? 0.35 : 1);
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-    }
-  }
-
-  _drawPsiIcon(cx, cy) {
-    const ctx = this.ctx;
-
-    ctx.font = "30px Times New Roman";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("Y", cx - 9, cy - 3);
-
-    ctx.beginPath();
-    ctx.moveTo(cx + 1, cy + 8);
-    ctx.lineTo(cx + 24, cy + 8);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(cx + 12, cy - 10);
-    ctx.lineTo(cx + 12, cy + 8);
-    ctx.stroke();
-  }
-
-  _drawViscosityIcon(cx, cy) {
-    const ctx = this.ctx;
-
-    ctx.font = "30px Times New Roman";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("n", cx - 10, cy - 2);
-
-    for (let i = -1; i <= 1; i += 1) {
-      const y = cy + i * 8;
-      ctx.beginPath();
-      ctx.moveTo(cx - 2, y);
-      ctx.lineTo(cx + 24, y);
-      ctx.stroke();
-    }
-  }
-
-  _drawSpringIcon(cx, cy) {
-    const ctx = this.ctx;
-
-    ctx.font = "30px Times New Roman";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("k", cx - 11, cy - 2);
-
-    ctx.beginPath();
-    ctx.moveTo(cx + 2, cy - 14);
-    for (let i = 0; i < 8; i += 1) {
-      const x = cx + 2 + i * 3;
-      const y = cy - 14 + i * 4;
-      ctx.lineTo(x + (i % 2 === 0 ? 4 : -4), y);
-    }
-    ctx.stroke();
-  }
-
-  _drawEntropyIcon(cx, cy) {
-    const ctx = this.ctx;
-
-    ctx.font = "31px Times New Roman";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("S", cx - 11, cy - 2);
-
-    for (let i = 0; i < 9; i += 1) {
-      const x = cx + 2 + (i % 3) * 8;
-      const y = cy - 10 + Math.floor(i / 3) * 8;
-      ctx.beginPath();
-      ctx.arc(x, y, 1.6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  _drawTitle(gameState) {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.fillStyle = COLORS.lineWhite;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "58px Times New Roman";
-    ctx.fillText(gameState.titleText, LAYOUT.title.x, LAYOUT.title.y);
-
-    ctx.font = "26px Times New Roman";
-    ctx.fillStyle = "rgba(255,255,255,0.78)";
-    ctx.fillText(`Constants Remaining: ${gameState.constantsRemaining}/10`, LAYOUT.title.x, LAYOUT.title.y + 38);
-
-    if (gameState.liveEquation) {
-      ctx.font = "19px Cambria Math, Times New Roman, serif";
-      ctx.fillStyle = "rgba(190,240,255,0.9)";
-      ctx.fillText(gameState.liveEquation, LAYOUT.title.x, LAYOUT.title.y + 66);
-    }
-    ctx.restore();
-  }
-
-  _drawCornerDiamond() {
-    const ctx = this.ctx;
-    const cx = WORLD_WIDTH - 54;
-    const cy = WORLD_HEIGHT - 56;
-    const size = 19;
-
-    ctx.save();
-    ctx.fillStyle = "rgba(255,255,255,0.58)";
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - size);
-    ctx.lineTo(cx + size, cy);
-    ctx.lineTo(cx, cy + size);
-    ctx.lineTo(cx - size, cy);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
 }
 
 function withAlpha(color, alpha) {
-  if (color.startsWith("rgba(")) {
+  if (color?.startsWith("rgba(")) {
     const inner = color.slice(5, -1);
     const parts = inner.split(",").map((part) => part.trim());
     return `rgba(${parts[0]},${parts[1]},${parts[2]},${alpha})`;
   }
 
-  if (color.startsWith("rgb(")) {
+  if (color?.startsWith("rgb(")) {
     const inner = color.slice(4, -1);
     return `rgba(${inner},${alpha})`;
   }
 
   return `rgba(255,255,255,${alpha})`;
+}
+
+function blendAlpha(rgbaColor, alphaScale) {
+  if (!rgbaColor?.startsWith("rgba(")) {
+    return rgbaColor;
+  }
+  const inner = rgbaColor.slice(5, -1);
+  const parts = inner.split(",").map((part) => part.trim());
+  const a = clamp(Number(parts[3] || 1) * alphaScale, 0, 1);
+  return `rgba(${parts[0]},${parts[1]},${parts[2]},${a})`;
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
@@ -1147,8 +1013,3 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.arcTo(x, y, x + width, y, r);
   ctx.closePath();
 }
-
-
-
-
-
