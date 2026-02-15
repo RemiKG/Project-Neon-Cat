@@ -1,6 +1,6 @@
-﻿# The Ten Commandments
+﻿# The Ten Commandments V2
 
-Physics-based puzzle sandbox built for the McGill Physics Hackathon.
+Physics-based neon cat maze game for the McGill Physics Hackathon.
 
 ## Stack
 - HTML5 Canvas
@@ -16,24 +16,40 @@ You can also open `index.html` directly, but using a local server is recommended
 
 ## Controls
 - Move mouse: aim lens/crosshair.
-- Left click sidebar: select one of the 10 constants.
-- Hold left click on board: apply selected constant effect.
+- Left click sidebar: select one of the 6 powers.
+- Left click on board: deploy a timed power drop (consumes ammo).
+- Left click mode toggle: switch between `Normal` and `Hacker` visuals/audio.
 
-## Tools (10)
+## Modes
+- `Normal`: colorful neon look, simplified pixel power FX.
+- `Hacker`: technical presentation with full lens-gated physics overlays and live equations.
+
+## Powers (6)
 1. Heat
 2. Cold
-3. Mass
-4. Dark Energy
-5. High Pressure
-6. Vacuum
-7. Tunneling
-8. Viscosity
-9. Elasticity
-10. Entropy
+3. Gravity
+4. High Pressure
+5. Vacuum
+6. Quantum Tunneling
+
+## Gameplay
+- Control a neon cat through the maze to reach the neon rod goal.
+- Stage clears advance rainbow rod progression.
+- Trail color profile changes by stage.
+
+## Audio
+- Normal mode BGM: `theme.mp3`
+- Hacker mode BGM: `Hacker_theme.mp3`
+- Power drop SFX: Heat, Cold, Gravity, quantum, vacuum
+
+## Assets
+- Canonical V2 assets: `assetsv2/`
+- Runtime includes fallback behavior if assets fail to load.
 
 ## Project Files
-- `AGENTS.md`: constitution/specification for future agents.
-- `plans.md`: milestone plan and completion record.
-- `src/physicsEngine.js`: fake-physics and tool logic.
-- `src/renderer.js`: visual pipeline, lens masking, UI rendering.
-- `src/main.js`: orchestration and input-to-physics wiring.
+- `AGENTS.md`: V2 constitution/specification.
+- `plans.md`: V2 migration milestones and verification notes.
+- `src/main.js`: orchestration and input/deploy flow.
+- `src/physicsEngine.js`: fake-physics and active-drop mechanics.
+- `src/renderer.js`: normal/hacker visual pipelines.
+- `src/audioManager.js`: BGM and SFX management.
