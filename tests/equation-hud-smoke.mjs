@@ -1,4 +1,4 @@
-import { TOOLS } from "../src/config.js";
+﻿import { TOOLS, createPowerDrop } from "../src/config.js";
 import { PhysicsEngine } from "../src/physicsEngine.js";
 import { ParticleSystem } from "../src/particles.js";
 import { getLiveEquation } from "../src/equationHud.js";
@@ -8,34 +8,31 @@ const particles = new ParticleSystem();
 const dt = 1 / 60;
 
 const pointer = {
-  pointerX: engine.balloon.x - 60,
-  pointerY: engine.balloon.y - 30,
+  pointerX: engine.cat.x - 60,
+  pointerY: engine.cat.y - 30,
 };
 
 const expectedToken = {
   heat: "dT/dt",
   cold: "dT/dt",
-  mass: "GMm",
-  darkEnergy: "Lambda",
+  gravity: "GMm",
   highPressure: "∂p/∂t",
   vacuum: "u_r",
-  tunneling: "P_tunnel",
-  viscosity: "dv/dt",
-  elasticity: "v_out/v_in",
-  entropy: "dS/dt",
+  quantumTunneling: "P_tunnel",
 };
 
 for (const tool of TOOLS) {
+  const drop = createPowerDrop(tool.id, pointer.pointerX, pointer.pointerY, 0);
+  const activeDrops = [drop];
+
   for (let i = 0; i < 8; i += 1) {
     engine.update(
       dt,
       {
         activeTool: tool.id,
-        applying: true,
+        activeDrops,
         pointerX: pointer.pointerX,
         pointerY: pointer.pointerY,
-        pointerInBoard: true,
-        pointerPressed: i === 0,
       },
       particles,
     );
